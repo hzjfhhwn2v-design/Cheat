@@ -7,10 +7,14 @@ import dev.flipscout.core.flip.BazaarFlip;
 import dev.flipscout.core.item.ItemKey;
 import dev.flipscout.core.market.AuctionIndex;
 import dev.flipscout.core.market.Valuation;
+import dev.flipscout.core.profit.ProfitTracker;
 import dev.flipscout.core.util.Coins;
 import dev.flipscout.core.util.Text;
 
 import java.io.File;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,7 +30,10 @@ import java.util.function.LongSupplier;
 /** /flipscout and its sub-commands, with messages in Italian. */
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
-        "help", "on", "off", "ah", "bz", "top", "recent", "open", "set", "config", "blacklist", "status", "reload", "test");
+        "help", "on", "off", "ah", "bz", "top", "recent", "open", "guadagni", "sessione", "totale", "flip", "magazzino",
+        "set", "config", "blacklist", "status", "reload", "test");
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm");
     private static final List<String> ON_OFF = Arrays.asList("on", "off");
     private static final Map<String, String> ALIASES = new LinkedHashMap<String, String>();
 
@@ -40,13 +47,15 @@ final class Commands {
     private final Config config;
     private final File configFile;
     private final Engine engine;
+    private final ProfitTracker tracker;
     private final Platform platform;
     private final LongSupplier clock;
 
-    Commands(Config config, File configFile, Engine engine, Platform platform, LongSupplier clock) {
+    Commands(Config config, File configFile, Engine engine, ProfitTracker tracker, Platform platform, LongSupplier clock) {
         this.config = config;
         this.configFile = configFile;
         this.engine = engine;
+        this.tracker = tracker;
         this.platform = platform;
         this.clock = clock;
     }
@@ -97,6 +106,25 @@ final class Commands {
                 case "blacklist":
                     blacklist(args);
                     break;
+                case "guadagni":
+                case "profitti":
+                case "profit":
+                    profits();
+                    break;
+                case "sessione":
+                case "session":
+                    session(args);
+                    break;
+                case "totale":
+                    total(args);
+                    break;
+                case "flip":
+                case "flips":
+                    flips();
+                    break;
+                case "magazzino":
+                    inventory(args);
+                    break;
                 case "status":
                 case "stato":
                     status();
@@ -134,6 +162,11 @@ final class Commands {
         helpLine("top [ah|bz] [n]", "top ", "le migliori occasioni in questo momento");
         helpLine("recent", "recent", "ultime notifiche");
         helpLine("open", "open", "apre l'ultima notifica");
+        helpLine("guadagni", "guadagni", "quanto hai guadagnato: sessione, oggi, totale");
+        helpLine("sessione [pausa|riprendi|reset|storico]", "sessione ", "gestisce la sessione");
+        helpLine("totale [reset]", "totale", "totale e ultimi giorni");
+        helpLine("flip", "flip", "gli ultimi flip chiusi");
+        helpLine("magazzino [svuota]", "magazzino", "comprati e non ancora venduti");
         helpLine("set <chiave> <valore>", "set ", "cambia un'impostazione (es. set ah.minProfit 1m)");
         helpLine("config [filtro]", "config", "mostra le impostazioni");
         helpLine("blacklist add|remove|list [ID]", "blacklist ", "oggetti da ignorare");
@@ -253,7 +286,7 @@ final class Commands {
             info("§7Ancora nessuna notifica in questa sessione.");
             return;
         }
-        info("§fUltime notifiche §8(la più recente in fondo):");
+        info("§fUltime notifiche §8(la più recente in fondo)" + soldSummary(notifications) + "§f:");
         long now = clock.getAsLong();
         List<Engine.Notification> ordered = new ArrayList<Engine.Notification>(notifications);
         Collections.reverse(ordered);
@@ -267,7 +300,51 @@ final class Commands {
                     msg.add(text, part.hover);
                 }
             }
+            addSaleState(msg, notification);
             platform.showMessage(msg);
+        }
+    }
+
+    /** How many of the notified auctions already sold, and how fast. */
+    private static String soldSummary(List<Engine.Notification> notifications) {
+        int auctions = 0;
+        List<Long> times = new ArrayList<Long>();
+        for (Engine.Notification notification : notifications) {
+            if (notification.auctionUuid == null) {
+                continue;
+            }
+            auctions++;
+            if (notification.soldAt() > 0 && notification.listedAt > 0) {
+                times.add(Math.max(0, notification.soldAt() - notification.listedAt));
+            }
+        }
+        if (auctions == 0) {
+            return "";
+        }
+        if (times.isEmpty()) {
+            return " §8- delle " + auctions + " aste nessuna risulta ancora venduta";
+        }
+        Collections.sort(times);
+        return " §8- " + times.size() + " aste su " + auctions + " già vendute, metà entro "
+            + Text.shortDuration(times.get((times.size() - 1) / 2)) + " dalla messa in vendita";
+    }
+
+    private void addSaleState(Msg msg, Engine.Notification notification) {
+        if (notification.auctionUuid == null) {
+            return;
+        }
+        long soldAt = notification.soldAt();
+        if (soldAt > 0) {
+            if (notification.boughtByYou()) {
+                msg.add(" §a[comprata da te]");
+                return;
+            }
+            String after = Text.shortDuration(soldAt - notification.listedAt);
+            long afterNotice = soldAt - notification.notifiedAt;
+            msg.add(" §c[venduta dopo " + after + "]", "§7Comprata " + after + " dopo la messa in vendita, "
+                + (afterNotice >= 0 ? Text.shortDuration(afterNotice) + " dopo l'avviso" : "prima dell'avviso"));
+        } else if (!engine.index.contains(notification.auctionUuid)) {
+            msg.add(" §8[non più in vendita]", "§7Non è più tra le aste attive: comprata, ritirata o scaduta");
         }
     }
 
@@ -275,6 +352,11 @@ final class Commands {
         Engine.Notification last = engine.lastNotification();
         if (last == null || last.command == null) {
             info("§7Ancora nessuna notifica da aprire.");
+            return;
+        }
+        if (last.soldAt() > 0) {
+            info(last.boughtByYou() ? "§aQuest'asta l'hai già comprata tu."
+                : "§cL'asta è già stata comprata da qualcun altro, non la apro.");
             return;
         }
         platform.sendCommand(last.command.startsWith("/") ? last.command.substring(1) : last.command);
@@ -401,6 +483,12 @@ final class Commands {
             : "§8disattivato");
         line("Oggetti conosciuti", Coins.full(engine.items().size()));
         line("Notifiche in questa sessione", s.auctionNotifications + " aste, " + s.bazaarNotifications + " bazaar");
+        if (config.trackerEnabled) {
+            ProfitTracker.Session session = tracker.session();
+            line("Guadagni", "sessione " + ProfitTracker.signed(session.stats.profit) + (session.paused ? " §e(in pausa)" : "")
+                + " §8| §7oggi " + ProfitTracker.signed(tracker.today().profit)
+                + " §8| §7totale " + ProfitTracker.signed(tracker.total().profit));
+        }
         for (Map.Entry<String, String> error : s.errors().entrySet()) {
             platform.showMessage(Msg.plain("§c  Errore " + error.getKey() + ": §7" + error.getValue()));
         }
@@ -462,11 +550,20 @@ final class Commands {
                     return startingWith(Arrays.asList("ah.", "bz.", "source.", "url."), last);
                 case "blacklist":
                     return startingWith(Arrays.asList("add", "remove", "list"), last);
+                case "sessione":
+                    return startingWith(Arrays.asList("pausa", "riprendi", "reset", "storico"), last);
+                case "totale":
+                    return startingWith(Collections.singletonList("reset"), last);
+                case "magazzino":
+                    return startingWith(Collections.singletonList("svuota"), last);
                 default:
                     return Collections.emptyList();
             }
         }
         if (args.length == 3) {
+            if ("totale".equals(sub) && "reset".equalsIgnoreCase(args[1])) {
+                return startingWith(Collections.singletonList("conferma"), last);
+            }
             if ("bz".equals(sub)) {
                 return startingWith(ON_OFF, last);
             }
@@ -532,6 +629,211 @@ final class Commands {
     }
 
     // ---- Helpers ----
+
+    // ---- Profits ----
+
+    private void profits() {
+        if (!config.trackerEnabled) {
+            info("§7Il conteggio dei guadagni è spento: §e/flipscout set tracker.enabled on");
+            return;
+        }
+        ProfitTracker.Session session = tracker.session();
+        info("§fGuadagni");
+        line("Sessione " + (session.paused ? "§e(in pausa)" : "§a(attiva)"), stats(session.stats) + " §8| "
+            + Text.duration(session.activeMillis) + perHour(session));
+        line("Oggi", stats(tracker.today()));
+        line("Totale", stats(tracker.total()) + " §8(dal " + date(tracker.since()) + ")");
+        List<ProfitTracker.Lot> lots = tracker.lots();
+        List<ProfitTracker.Unclaimed> unclaimed = tracker.unclaimed();
+        if (!lots.isEmpty() || !unclaimed.isEmpty()) {
+            double cost = 0;
+            for (ProfitTracker.Lot lot : lots) {
+                cost += lot.unitCost * lot.amount;
+            }
+            line("Magazzino", lots.size() + " acquisti da rivendere §8(" + Coins.compact(cost) + ")"
+                + (unclaimed.isEmpty() ? "" : "§f, " + unclaimed.size() + " vendite da ritirare"));
+        }
+        platform.showMessage(new Msg()
+            .suggest("§e[SESSIONE] ", "/flipscout sessione", "§7Dettagli, pausa e reset della sessione")
+            .suggest("§e[ULTIMI FLIP] ", "/flipscout flip", "§7I flip chiusi più recenti")
+            .suggest("§e[MAGAZZINO] ", "/flipscout magazzino", "§7Comprati e non ancora venduti")
+            .suggest("§e[TOTALE]", "/flipscout totale", "§7Totale e ultimi giorni"));
+    }
+
+    private void session(String[] args) {
+        String action = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "";
+        switch (action) {
+            case "":
+                showSession();
+                break;
+            case "pausa":
+            case "pause":
+            case "stop":
+                info(tracker.pauseSession() ? "§eSessione in pausa: §7acquisti e vendite contano solo nel totale."
+                    : "§7La sessione è già in pausa.");
+                break;
+            case "riprendi":
+            case "resume":
+            case "start":
+                info(tracker.resumeSession() ? "§aSessione ripresa." : "§7La sessione è già attiva.");
+                break;
+            case "reset":
+            case "nuova":
+                ProfitTracker.Session old = tracker.session();
+                tracker.resetSession();
+                info("§aNuova sessione iniziata. §7Quella di prima (" + ProfitTracker.signed(old.stats.profit)
+                    + "§7) è in §e/flipscout sessione storico§7.");
+                break;
+            case "storico":
+            case "history":
+                showHistory();
+                break;
+            default:
+                throw new IllegalArgumentException("Uso: /flipscout sessione [pausa|riprendi|reset|storico]");
+        }
+    }
+
+    private void showSession() {
+        ProfitTracker.Session s = tracker.session();
+        info("§fSessione " + (s.paused ? "§e(in pausa)" : "§a(attiva)") + " §8- iniziata il " + dateTime(s.startedAt)
+            + ", " + Text.duration(s.activeMillis) + " di gioco");
+        details(s.stats);
+        if (!Double.isNaN(s.profitPerHour())) {
+            line("All'ora", ProfitTracker.signed(s.profitPerHour()));
+        }
+        Msg buttons = new Msg();
+        if (s.paused) {
+            buttons.suggest("§a[RIPRENDI] ", "/flipscout sessione riprendi", "§7Torna a contare in questa sessione");
+        } else {
+            buttons.suggest("§e[PAUSA] ", "/flipscout sessione pausa", "§7Smette di contare finché non riprendi");
+        }
+        buttons.suggest("§c[RESET] ", "/flipscout sessione reset", "§7Archivia questa sessione e ne inizia una nuova");
+        buttons.suggest("§7[STORICO]", "/flipscout sessione storico", "§7Le sessioni precedenti");
+        platform.showMessage(buttons);
+    }
+
+    private void showHistory() {
+        List<ProfitTracker.PastSession> history = tracker.history();
+        if (history.isEmpty()) {
+            info("§7Nessuna sessione archiviata: si archiviano con §e/flipscout sessione reset§7.");
+            return;
+        }
+        info("§fSessioni precedenti §8(la più recente in alto):");
+        for (int i = 0; i < Math.min(10, history.size()); i++) {
+            ProfitTracker.PastSession past = history.get(i);
+            platform.showMessage(Msg.plain("§7  " + dateTime(past.startedAt) + " §8(" + Text.duration(past.activeMillis)
+                + "): " + stats(past.stats)));
+        }
+    }
+
+    private void total(String[] args) {
+        String action = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "";
+        if ("reset".equals(action)) {
+            if (args.length > 2 && "conferma".equalsIgnoreCase(args[2])) {
+                tracker.resetTotal();
+                info("§aTotale azzerato. §7La sessione in corso e il magazzino restano.");
+            } else {
+                platform.showMessage(new Msg().suggest(Msg.PREFIX + "§eSicuro? Scrivi §f/flipscout totale reset conferma",
+                    "/flipscout totale reset conferma", "§cCancella totale, giorni, sessioni passate e lista dei flip"));
+            }
+            return;
+        }
+        if (!action.isEmpty()) {
+            throw new IllegalArgumentException("Uso: /flipscout totale [reset]");
+        }
+        info("§fTotale §8(dal " + date(tracker.since()) + ")");
+        details(tracker.total());
+        List<Map.Entry<String, ProfitTracker.Stats>> days =
+            new ArrayList<Map.Entry<String, ProfitTracker.Stats>>(tracker.days().entrySet());
+        if (!days.isEmpty()) {
+            platform.showMessage(Msg.plain("§7  Ultimi giorni:"));
+            Collections.reverse(days);
+            for (int i = 0; i < Math.min(7, days.size()); i++) {
+                String day = days.get(i).getKey();
+                platform.showMessage(Msg.plain("§7    " + day.substring(8, 10) + "/" + day.substring(5, 7) + ": "
+                    + stats(days.get(i).getValue())));
+            }
+        }
+    }
+
+    private void flips() {
+        List<ProfitTracker.Flip> flips = tracker.flips();
+        if (flips.isEmpty()) {
+            info("§7Ancora nessun flip chiuso: si chiude quando vendi qualcosa che il mod ti ha visto comprare.");
+            return;
+        }
+        info("§fUltimi flip §8(il più recente in alto, passa il mouse per i dettagli):");
+        for (int i = 0; i < Math.min(10, flips.size()); i++) {
+            ProfitTracker.Flip f = flips.get(i);
+            platform.showMessage(new Msg().add("§7  " + f.item + (f.amount > 1 ? " x" + f.amount : "") + " §8"
+                + Coins.compact(f.cost) + " → " + Coins.compact(f.revenue) + " " + ProfitTracker.signed(f.profit),
+                "§7Comprato: §f" + dateTime(f.boughtAt) + "\n§7Venduto: §f" + dateTime(f.soldAt) + "\n§7Tenuto: §f"
+                    + Text.duration(f.soldAt - f.boughtAt) + "\n§7Incasso dopo le tasse: §f" + Coins.full(f.revenue)));
+        }
+    }
+
+    private void inventory(String[] args) {
+        if (args.length > 1 && ("svuota".equalsIgnoreCase(args[1]) || "clear".equalsIgnoreCase(args[1]))) {
+            info("§7Magazzino svuotato: " + tracker.clearLots() + " acquisti dimenticati.");
+            return;
+        }
+        List<ProfitTracker.Lot> lots = tracker.lots();
+        List<ProfitTracker.Unclaimed> unclaimed = tracker.unclaimed();
+        if (lots.isEmpty() && unclaimed.isEmpty()) {
+            info("§7Il magazzino è vuoto: nessun acquisto da rivendere.");
+            return;
+        }
+        long now = clock.getAsLong();
+        if (!lots.isEmpty()) {
+            info("§fComprati e non ancora venduti:");
+            for (int i = 0; i < Math.min(15, lots.size()); i++) {
+                ProfitTracker.Lot lot = lots.get(i);
+                platform.showMessage(Msg.plain("§7  " + lot.item + (lot.amount > 1 ? " x" + lot.amount : "") + " §8per §6"
+                    + Coins.compact(lot.unitCost * lot.amount) + " §8(" + Text.duration(now - lot.time) + " fa)"));
+            }
+            if (lots.size() > 15) {
+                platform.showMessage(Msg.plain("§8  ... e altri " + (lots.size() - 15)));
+            }
+            platform.showMessage(new Msg().suggest("§7  §c[SVUOTA]", "/flipscout magazzino svuota",
+                "§7Dimentica questi acquisti (per esempio se li hai usati invece di rivenderli)"));
+        }
+        if (!unclaimed.isEmpty()) {
+            info("§fVenduti all'asta, coins ancora da ritirare:");
+            for (ProfitTracker.Unclaimed u : unclaimed) {
+                platform.showMessage(Msg.plain("§7  " + u.item + " §8a §6" + Coins.compact(u.price) + " §8(" + u.buyer + ")"));
+            }
+        }
+    }
+
+    private void details(ProfitTracker.Stats s) {
+        line("Profitto", ProfitTracker.signed(s.profit) + " §7in " + s.flips + " flip");
+        if (s.bestItem != null) {
+            line("Miglior flip", s.bestItem + " " + ProfitTracker.signed(s.bestProfit));
+        }
+        line("Acquisti", s.bought + " §8per §6" + Coins.compact(s.spent));
+        line("Vendite", s.sold + " §8per §6" + Coins.compact(s.earned) + " §8(dopo le tasse)");
+        if (s.unmatched > 0) {
+            line("Senza acquisto", s.unmatched + " vendite §8(non contate nel profitto)");
+        }
+    }
+
+    private static String stats(ProfitTracker.Stats s) {
+        return ProfitTracker.signed(s.profit) + " §7in " + s.flips + " flip"
+            + (s.unmatched > 0 ? " §8(+" + s.unmatched + " vendite senza acquisto)" : "");
+    }
+
+    private static String perHour(ProfitTracker.Session session) {
+        double perHour = session.profitPerHour();
+        return Double.isNaN(perHour) ? "" : " §8| " + ProfitTracker.signed(perHour) + "§8/h";
+    }
+
+    private static String date(long time) {
+        return DATE.format(Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()));
+    }
+
+    private static String dateTime(long time) {
+        return DATE_TIME.format(Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()));
+    }
 
     private void info(String text) {
         platform.showMessage(Msg.prefixed(text));

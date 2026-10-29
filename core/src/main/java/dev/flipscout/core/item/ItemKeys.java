@@ -7,10 +7,13 @@ import dev.flipscout.core.util.Text;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,6 +21,22 @@ import java.util.regex.Pattern;
 public final class ItemKeys {
     private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl (\\d+)]");
     private static final String[] TIERS = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"};
+    private static final String[] MASTER_STARS = {"FIRST_MASTER_STAR", "SECOND_MASTER_STAR", "THIRD_MASTER_STAR",
+        "FOURTH_MASTER_STAR", "FIFTH_MASTER_STAR"};
+    private static final String[] GEM_QUALITIES = {"ROUGH", "FLAWED", "FINE", "FLAWLESS", "PERFECT"};
+    /**
+     * Enchantments the enchanting table gives up to level 5: at those levels their books are worth
+     * next to nothing, so they are not even stored.
+     */
+    private static final Set<String> TABLE_ENCHANTS = new HashSet<String>(Arrays.asList(
+        "SHARPNESS", "SMITE", "BANE_OF_ARTHROPODS", "CRITICAL", "CUBISM", "ENDER_SLAYER", "EXECUTE", "EXPERIENCE",
+        "FIRE_ASPECT", "FIRST_STRIKE", "GIANT_KILLER", "IMPALING", "KNOCKBACK", "LETHALITY", "LIFE_STEAL", "LOOTING",
+        "LUCK", "SCAVENGER", "THUNDERLORD", "VAMPIRISM", "VENOMOUS", "SYPHON", "TITAN_KILLER", "TRIPLE_STRIKE",
+        "CLEAVE", "POWER", "PUNCH", "FLAME", "INFINITE_QUIVER", "SNIPE", "AIMING", "PIERCING", "THUNDERBOLT",
+        "PROTECTION", "GROWTH", "THORNS", "RESPIRATION", "AQUA_AFFINITY", "DEPTH_STRIDER", "FEATHER_FALLING",
+        "FIRE_PROTECTION", "BLAST_PROTECTION", "PROJECTILE_PROTECTION", "REJUVENATE", "SUGAR_RUSH", "EFFICIENCY",
+        "FORTUNE", "SILK_TOUCH", "SMELTING_TOUCH", "HARVESTING", "RAINBOW", "ANGLER", "BLESSING", "CASTER", "FRAIL",
+        "LUCK_OF_THE_SEA", "LURE", "MAGNET", "SPIKED_HOOK"));
 
     private ItemKeys() {
     }
@@ -28,11 +47,18 @@ public final class ItemKeys {
         public final int count;
         /** Display name without colour codes (from the API, else from the NBT). */
         public final String name;
+        /** Valuable upgrades applied to the item, or null. */
+        public final Upgrades upgrades;
 
         public Decoded(ItemKey key, int count, String name) {
+            this(key, count, name, null);
+        }
+
+        public Decoded(ItemKey key, int count, String name, Upgrades upgrades) {
             this.key = key;
             this.count = count;
             this.name = name;
+            this.upgrades = upgrades;
         }
     }
 
@@ -49,8 +75,12 @@ public final class ItemKeys {
         if (name == null || name.isEmpty()) {
             name = Text.stripCodes(NbtReader.string(NbtReader.compound(tag.get("display")).get("Name")));
         }
-        ItemKey key = fromExtraAttributes(NbtReader.compound(tag.get("ExtraAttributes")), name);
-        return key == null ? null : new Decoded(key, count, name);
+        Map<String, Object> extra = NbtReader.compound(tag.get("ExtraAttributes"));
+        ItemKey key = fromExtraAttributes(extra, name);
+        if (key == null) {
+            return null;
+        }
+        return new Decoded(key, count, name, count == 1 ? upgrades(key.id, extra) : null);
     }
 
     /** {@link #decode} that logs and returns null on malformed data. */
@@ -89,6 +119,108 @@ public final class ItemKeys {
             default:
                 return plain(id, extra);
         }
+    }
+
+    /**
+     * Valuable upgrades applied to an item, or null. Books, runes, potions and shards are fully
+     * described by their key already.
+     */
+    public static Upgrades upgrades(String id, Map<String, Object> extra) {
+        Upgrades.Builder b = new Upgrades.Builder();
+        if ("PET".equals(id)) {
+            Map<String, Object> info = JsonTree.obj(JsonTree.parseQuiet(NbtReader.string(extra.get("petInfo"))));
+            b.add(Upgrades.Kind.PET_ITEM, JsonTree.str(info.get("heldItem")), 1);
+            return b.build();
+        }
+        if ("ENCHANTED_BOOK".equals(id) || "RUNE".equals(id) || "UNIQUE_RUNE".equals(id) || "POTION".equals(id)
+            || "ATTRIBUTE_SHARD".equals(id)) {
+            return null;
+        }
+        if (NbtReader.intValue(extra.get("rarity_upgrades"), 0) > 0) {
+            b.add(Upgrades.Kind.RECOMBOBULATOR, "RECOMBOBULATOR_3000", 1);
+        }
+        int potatoBooks = NbtReader.intValue(extra.get("hot_potato_count"), 0);
+        b.add(Upgrades.Kind.HOT_POTATO_BOOK, "HOT_POTATO_BOOK", Math.min(potatoBooks, 10));
+        b.add(Upgrades.Kind.FUMING_POTATO_BOOK, "FUMING_POTATO_BOOK", Math.min(potatoBooks - 10, 5));
+        for (Map.Entry<String, Object> entry : NbtReader.compound(extra.get("enchantments")).entrySet()) {
+            String name = entry.getKey().toUpperCase(Locale.ROOT);
+            int level = NbtReader.intValue(entry.getValue(), 0);
+            if (level > 0 && !(level <= 5 && TABLE_ENCHANTS.contains(name))) {
+                b.add(Upgrades.Kind.ENCHANTMENT, "ENCHANTMENT_" + name + "_" + level, 1);
+            }
+        }
+        // Stars 1-5 cost essence, 6-10 are master stars.
+        int stars = Math.max(NbtReader.intValue(extra.get("upgrade_level"), 0),
+            NbtReader.intValue(extra.get("dungeon_item_level"), 0));
+        for (int i = 0; i < Math.min(stars - 5, MASTER_STARS.length); i++) {
+            b.add(Upgrades.Kind.MASTER_STAR, MASTER_STARS[i], 1);
+        }
+        gems(b, NbtReader.compound(extra.get("gems")));
+        for (Object scroll : NbtReader.list(extra.get("ability_scroll"))) {
+            b.add(Upgrades.Kind.ABILITY_SCROLL, NbtReader.string(scroll), 1);
+        }
+        b.add(Upgrades.Kind.ART_OF_WAR, "THE_ART_OF_WAR", NbtReader.intValue(extra.get("art_of_war_count"), 0));
+        b.add(Upgrades.Kind.ART_OF_PEACE, "THE_ART_OF_PEACE", NbtReader.intValue(extra.get("artOfPeaceApplied"), 0));
+        b.add(Upgrades.Kind.WOOD_SINGULARITY, "WOOD_SINGULARITY",
+            NbtReader.intValue(extra.get("wood_singularity_count"), 0));
+        b.add(Upgrades.Kind.FARMING_FOR_DUMMIES, "FARMING_FOR_DUMMIES",
+            NbtReader.intValue(extra.get("farming_for_dummies_count"), 0));
+        b.add(Upgrades.Kind.TRANSMISSION_TUNER, "TRANSMISSION_TUNER",
+            NbtReader.intValue(extra.get("tuned_transmission"), 0));
+        b.add(Upgrades.Kind.MANA_DISINTEGRATOR, "MANA_DISINTEGRATOR",
+            NbtReader.intValue(extra.get("mana_disintegrator_count"), 0));
+        b.add(Upgrades.Kind.JALAPENO_BOOK, "JALAPENO_BOOK", NbtReader.intValue(extra.get("jalapeno_count"), 0));
+        b.add(Upgrades.Kind.POLARVOID_BOOK, "POLARVOID_BOOK", NbtReader.intValue(extra.get("polarvoid"), 0));
+        if (NbtReader.intValue(extra.get("ethermerge"), 0) > 0) {
+            b.add(Upgrades.Kind.ETHERWARP, "ETHERWARP_MERGER", 1).add(Upgrades.Kind.ETHERWARP, "ETHERWARP_CONDUIT", 1);
+        }
+        b.add(Upgrades.Kind.POWER_SCROLL, NbtReader.string(extra.get("power_ability_scroll")), 1);
+        b.add(Upgrades.Kind.DYE, NbtReader.string(extra.get("dye_item")), 1);
+        for (String part : new String[] {"drill_part_upgrade_module", "drill_part_fuel_tank", "drill_part_engine"}) {
+            b.add(Upgrades.Kind.DRILL_PART, NbtReader.string(extra.get(part)), 1);
+        }
+        return b.build();
+    }
+
+    /**
+     * Gemstones: {"RUBY_0": "FINE", "COMBAT_0": "PERFECT", "COMBAT_0_gem": "SAPPHIRE"}, where a
+     * quality may also be a compound with a "quality" field.
+     */
+    private static void gems(Upgrades.Builder b, Map<String, Object> gems) {
+        for (Map.Entry<String, Object> entry : gems.entrySet()) {
+            String slot = entry.getKey();
+            if (slot.endsWith("_gem") || "unlocked_slots".equals(slot)) {
+                continue;
+            }
+            Object value = entry.getValue();
+            String quality = value instanceof Map
+                ? NbtReader.string(NbtReader.compound(value).get("quality")) : NbtReader.string(value);
+            quality = upper(quality);
+            if (quality == null || indexOf(GEM_QUALITIES, quality) < 0) {
+                continue;
+            }
+            int underscore = slot.lastIndexOf('_');
+            String type = underscore > 0 ? slot.substring(0, underscore) : slot;
+            String chosen = NbtReader.string(gems.get(slot + "_gem"));
+            if (chosen != null) {
+                // Universal slots (COMBAT_0, ...) name the gemstone in a sibling entry.
+                type = chosen;
+            }
+            b.add(Upgrades.Kind.GEMSTONE, quality + "_" + upper(type) + "_GEM", 1);
+        }
+    }
+
+    /** Key to price an upgrade part by: its book key for ENCHANTMENT_X_N, else the plain item. */
+    public static ItemKey partKey(String id) {
+        if (id.startsWith("ENCHANTMENT_")) {
+            String rest = id.substring("ENCHANTMENT_".length());
+            int underscore = rest.lastIndexOf('_');
+            if (underscore > 0) {
+                return new ItemKey("ENCHANTED_BOOK", id, rest.substring(0, underscore) + ";" + rest.substring(underscore + 1),
+                    true, id, id);
+            }
+        }
+        return new ItemKey(id, id, id, true, id, id);
     }
 
     private static ItemKey pet(Map<String, Object> extra, String itemName) {

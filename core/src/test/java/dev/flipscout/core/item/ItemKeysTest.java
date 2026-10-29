@@ -4,6 +4,11 @@ import dev.flipscout.core.TestData;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 import static dev.flipscout.core.TestData.map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,6 +17,74 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ItemKeysTest {
+    private static List<String> parts(Upgrades upgrades) {
+        List<String> out = new ArrayList<String>();
+        for (Upgrades.Part part : upgrades.parts()) {
+            out.add(part.kind + ":" + part.id + "x" + part.count);
+        }
+        Collections.sort(out);
+        return out;
+    }
+
+    @Test
+    void upgradesAreReadFromTheNbt() throws IOException {
+        Map<String, Object> gems = map("JASPER_0", "FINE", "COMBAT_0", map("quality", "PERFECT", "uuid", "x"),
+            "COMBAT_0_gem", "SAPPHIRE", "unlocked_slots", Arrays.asList("JASPER_0", "COMBAT_0"));
+        String bytes = TestData.itemBytes(map("id", "HYPERION", "rarity_upgrades", 1, "hot_potato_count", 15,
+            "enchantments", map("sharpness", 5, "ultimate_wise", 5, "giant_killer", 7), "upgrade_level", 8,
+            "gems", gems, "ability_scroll", Arrays.asList("IMPLOSION_SCROLL", "SHADOW_WARP_SCROLL"),
+            "art_of_war_count", 1, "ethermerge", (byte) 1), null, 1);
+        ItemKeys.Decoded d = ItemKeys.decode(bytes, "Heroic Hyperion ✪✪✪✪✪➌");
+        // Upgrades do not split the key: the price comparison still sees every Hyperion.
+        assertEquals("HYPERION", d.key.key);
+        List<String> expected = new ArrayList<String>(Arrays.asList(
+            "RECOMBOBULATOR:RECOMBOBULATOR_3000x1", "HOT_POTATO_BOOK:HOT_POTATO_BOOKx10",
+            "FUMING_POTATO_BOOK:FUMING_POTATO_BOOKx5", "ENCHANTMENT:ENCHANTMENT_ULTIMATE_WISE_5x1",
+            "ENCHANTMENT:ENCHANTMENT_GIANT_KILLER_7x1", "MASTER_STAR:FIRST_MASTER_STARx1",
+            "MASTER_STAR:SECOND_MASTER_STARx1", "MASTER_STAR:THIRD_MASTER_STARx1", "GEMSTONE:FINE_JASPER_GEMx1",
+            "GEMSTONE:PERFECT_SAPPHIRE_GEMx1", "ABILITY_SCROLL:IMPLOSION_SCROLLx1",
+            "ABILITY_SCROLL:SHADOW_WARP_SCROLLx1", "ART_OF_WAR:THE_ART_OF_WARx1", "ETHERWARP:ETHERWARP_MERGERx1",
+            "ETHERWARP:ETHERWARP_CONDUITx1"));
+        Collections.sort(expected);
+        assertEquals(expected, parts(d.upgrades));
+    }
+
+    @Test
+    void petHeldItemIsAnUpgrade() throws IOException {
+        String petInfo = "{\"type\":\"ENDER_DRAGON\",\"tier\":\"LEGENDARY\",\"heldItem\":\"PET_ITEM_TIER_BOOST\"}";
+        ItemKeys.Decoded d = ItemKeys.decode(TestData.itemBytes(map("id", "PET", "petInfo", petInfo), null, 1),
+            "[Lvl 100] Ender Dragon");
+        assertEquals("PET_ENDER_DRAGON;LEGENDARY;L100", d.key.key);
+        assertEquals(Collections.singletonList("PET_ITEM:PET_ITEM_TIER_BOOSTx1"), parts(d.upgrades));
+    }
+
+    @Test
+    void itemsWithoutUpgradesAndStacksHaveNone() throws IOException {
+        assertNull(ItemKeys.decode(TestData.plainItem("HYPERION"), null).upgrades);
+        String tableEnchantsOnly = TestData.itemBytes(map("id", "ASPECT_OF_THE_END",
+            "enchantments", map("sharpness", 5, "critical", 5)), null, 1);
+        assertNull(ItemKeys.decode(tableEnchantsOnly, null).upgrades);
+        String stack = TestData.itemBytes(map("id", "ENCHANTED_DIAMOND", "rarity_upgrades", 1), null, 64);
+        assertNull(ItemKeys.decode(stack, null).upgrades);
+    }
+
+    @Test
+    void upgradeLabels() {
+        Upgrades upgrades = new Upgrades.Builder()
+            .add(Upgrades.Kind.ENCHANTMENT, "ENCHANTMENT_ULTIMATE_WISE_5", 1)
+            .add(Upgrades.Kind.HOT_POTATO_BOOK, "HOT_POTATO_BOOK", 10)
+            .add(Upgrades.Kind.RECOMBOBULATOR, "RECOMBOBULATOR_3000", 1)
+            .build();
+        List<String> labels = new ArrayList<String>();
+        for (Upgrades.Part part : upgrades.parts()) {
+            labels.add(part.label());
+        }
+        assertEquals(Arrays.asList("Ultimate Wise V", "10x Hot Potato Book", "Recombobulator 3000"), labels);
+        assertEquals("ENCHANTMENT_ULTIMATE_WISE_5", ItemKeys.partKey("ENCHANTMENT_ULTIMATE_WISE_5").bazaarId);
+        assertEquals("ULTIMATE_WISE;5", ItemKeys.partKey("ENCHANTMENT_ULTIMATE_WISE_5").neuKey);
+        assertEquals("THE_ART_OF_WAR", ItemKeys.partKey("THE_ART_OF_WAR").key);
+    }
+
     @Test
     void plainItemUsesItsIdEverywhere() throws IOException {
         ItemKeys.Decoded d = ItemKeys.decode(TestData.plainItem("HYPERION"), "Hyperion ✪✪✪✪✪");

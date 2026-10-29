@@ -15,6 +15,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,12 @@ public final class FlipScoutFabric implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (++ticks % 20 == 0) {
                 platform.update(client);
+            }
+        });
+        // Server messages (purchases, sales); the action bar ("overlay") never has any.
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!overlay) {
+                flipScout.onChat(message.getString());
             }
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> flipScout.stop());

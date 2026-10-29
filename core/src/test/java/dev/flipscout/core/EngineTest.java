@@ -408,6 +408,48 @@ class EngineTest {
     }
 
     @Test
+    void notifiedAuctionsAreMarkedWhenTheySell() {
+        initialMarket();
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("fast", "s4", 800_000_000L, t1 - 10_000)));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        Engine.Notification fast = engine.recent().get(0);
+        assertEquals("fast", fast.auctionUuid);
+        assertEquals(0, fast.soldAt());
+
+        // Someone bought it 12s after it was listed.
+        long t2 = t1 + 60_000;
+        http.put(ENDED, TestData.endedPage(t2,
+            TestData.ended("fast", 800_000_000L, true, t1 + 2_000, TestData.plainItem("HYPERION"))));
+        clock.set(t2 + 1_000);
+        engine.tick();
+        assertEquals(t1 + 2_000, fast.soldAt());
+        assertEquals(12_000, fast.soldAt() - fast.listedAt);
+        assertFalse(fast.boughtByYou());
+
+        // The next one you bought yourself.
+        long t3 = t2 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t3,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("mine", "s5", 805_000_000L, t3 - 9_000)));
+        clock.set(t3 + 1_000);
+        engine.tick();
+        long t4 = t3 + 60_000;
+        http.put(ENDED, TestData.endedPage(t4,
+            TestData.ended("mine", 805_000_000L, true, t3 + 3_000, TestData.plainItem("HYPERION"))
+                .replace("\"buyer\":\"b\"", "\"buyer\":\"myuuid\"")));
+        clock.set(t4 + 1_000);
+        engine.tick();
+        Engine.Notification mine = engine.recent().get(0);
+        assertEquals("mine", mine.auctionUuid);
+        assertTrue(mine.boughtByYou());
+        assertEquals(2, engine.recent().size());
+    }
+
+    @Test
     void notificationsShowHowOldTheAuctionIs() {
         initialMarket();
         long t1 = T0 + 60_000;

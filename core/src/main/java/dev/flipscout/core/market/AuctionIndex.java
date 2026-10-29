@@ -1,6 +1,7 @@
 package dev.flipscout.core.market;
 
 import dev.flipscout.core.item.ItemKey;
+import dev.flipscout.core.item.Upgrades;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,10 +26,17 @@ public final class AuctionIndex {
         public final long end;
         /** Local time at which we first saw the auction. */
         public final long firstSeen;
+        /** Valuable upgrades applied to the item, or null. */
+        public final Upgrades upgrades;
         long lastScan;
 
         public Listing(String uuid, String seller, String itemName, String tier, ItemKey key, long price, int count,
                        long start, long end, long firstSeen, long scan) {
+            this(uuid, seller, itemName, tier, key, price, count, start, end, firstSeen, scan, null);
+        }
+
+        public Listing(String uuid, String seller, String itemName, String tier, ItemKey key, long price, int count,
+                       long start, long end, long firstSeen, long scan, Upgrades upgrades) {
             this.uuid = uuid;
             this.seller = seller;
             this.itemName = itemName;
@@ -41,6 +49,7 @@ public final class AuctionIndex {
             this.end = end;
             this.firstSeen = firstSeen;
             this.lastScan = scan;
+            this.upgrades = upgrades;
         }
     }
 
@@ -164,6 +173,17 @@ public final class AuctionIndex {
         for (TreeSet<Listing> set : byKey.values()) {
             if (!set.isEmpty()) {
                 out.add(set.first());
+            }
+        }
+        return out;
+    }
+
+    /** Every listing that has upgrades worth looking at. */
+    public synchronized List<Listing> withUpgrades() {
+        List<Listing> out = new ArrayList<Listing>();
+        for (Listing listing : byUuid.values()) {
+            if (listing.upgrades != null) {
+                out.add(listing);
             }
         }
         return out;

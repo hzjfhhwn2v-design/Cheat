@@ -23,6 +23,9 @@ final class Notifier {
             // How long ago it was listed, so you can tell how fresh the flip is.
             line.append(" §8| §7").append(Text.shortDuration(now - l.start));
         }
+        if (flip.upgradeOnly) {
+            line.append(" §b+upgrade");
+        }
         if (flip.weak) {
             line.append(" §c⚠");
         }
@@ -63,6 +66,21 @@ final class Notifier {
                 h.append("§7  Mediana Coflnet: §f").append(Coins.compact(v.coflMedian)).append('\n');
             }
         }
+        if (v.upgradeExtra > 0) {
+            h.append("§7Upgrade contati: §b+").append(Coins.compact(v.upgradeExtra))
+                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% del loro valore)\n");
+            int shown = 0;
+            for (Valuation.Part part : v.upgradeParts) {
+                if (shown++ == 6) {
+                    h.append("§8  ...\n");
+                    break;
+                }
+                h.append("§7  ").append(part.part.label()).append(": §f").append(Coins.compact(part.value)).append('\n');
+            }
+            if (v.referenceUpgrades > 0) {
+                h.append("§7  già nel BIN di riferimento: §c-").append(Coins.compact(v.referenceUpgrades)).append('\n');
+            }
+        }
         h.append("§7Tasse di vendita: §c-").append(Coins.compact(flip.fees)).append('\n');
         h.append("§7Profitto: §2+").append(Coins.full(flip.profit))
             .append(" §7(").append(Coins.decimal(flip.percent, 1)).append("%)\n");
@@ -76,6 +94,9 @@ final class Notifier {
         }
         if (flip.weak) {
             h.append("§cUn solo riferimento di prezzo: controlla prima di comprare\n");
+        }
+        if (flip.upgradeOnly) {
+            h.append("§bConviene solo contando gli upgrade: rivenderlo può richiedere più tempo\n");
         }
         h.append("§eClicca per aprire l'asta");
         return h.toString();

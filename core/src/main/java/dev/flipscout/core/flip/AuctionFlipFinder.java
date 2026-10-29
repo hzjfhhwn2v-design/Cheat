@@ -34,7 +34,13 @@ public final class AuctionFlipFinder {
             // Local lowest BIN suggests a flip but there is no sales data to confirm it.
             valuation = prices.valuate(key, listing.uuid, listing.unitPrice, true);
         }
-        return judge(listing, valuation);
+        AuctionFlip flip = judge(listing, valuation, false);
+        if (!config.ahUpgrades || valuation.bazaar
+            || prices.addUpgrades(valuation, listing, config.ahUpgradePercent / 100.0) <= 0) {
+            return flip;
+        }
+        // Worth more with its upgrades. If it is a flip only thanks to them, it needs a bigger margin.
+        return judge(listing, valuation, flip == null);
     }
 
     /**
@@ -52,6 +58,10 @@ public final class AuctionFlipFinder {
     }
 
     AuctionFlip judge(AuctionIndex.Listing listing, Valuation valuation) {
+        return judge(listing, valuation, false);
+    }
+
+    private AuctionFlip judge(AuctionIndex.Listing listing, Valuation valuation, boolean upgradeOnly) {
         if (!(valuation.value > 0)) {
             return null;
         }
@@ -60,7 +70,7 @@ public final class AuctionFlipFinder {
         double profit = resale - fees - listing.price;
         double percent = listing.price > 0 ? profit * 100.0 / listing.price : Double.POSITIVE_INFINITY;
         boolean weak = !valuation.bazaar && valuation.references < 2;
-        double minPercent = weak ? config.ahMinPercent * 2 : config.ahMinPercent;
+        double minPercent = weak || upgradeOnly ? config.ahMinPercent * 2 : config.ahMinPercent;
         if (profit < config.ahMinProfit || percent < minPercent) {
             return null;
         }
@@ -71,7 +81,7 @@ public final class AuctionFlipFinder {
         } else if (config.ahRequireVolume) {
             return null;
         }
-        return new AuctionFlip(listing, valuation, resale, fees, profit, percent, weak);
+        return new AuctionFlip(listing, valuation, resale, fees, profit, percent, weak, upgradeOnly);
     }
 
     private double profitAt(double unitValue, AuctionIndex.Listing listing) {

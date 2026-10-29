@@ -39,6 +39,8 @@ public final class Config {
     public volatile double ahMinPercent = 5;
     public volatile double ahMinVolume = 1;
     public volatile boolean ahRequireVolume = false;
+    public volatile boolean ahUpgrades = true;
+    public volatile int ahUpgradePercent = 80;
     public volatile String ahStrategy = "conservative";
     public volatile int ahMinSalesSamples = 3;
     public volatile int ahFullScanMinutes = 30;
@@ -69,6 +71,10 @@ public final class Config {
     public volatile int bzNpcCooldownMinutes = 15;
 
     // Sources
+    // Profit tracker
+    public volatile boolean trackerEnabled = true;
+    public volatile boolean trackerMessages = true;
+
     public volatile boolean sourceNeu = true;
     public volatile boolean sourceCoflnet = true;
     public volatile String urlHypixel = "https://api.hypixel.net";
@@ -156,6 +162,15 @@ public final class Config {
             new BoolSetting("ah.requireVolume", "Scarta gli oggetti di cui non si conoscono le vendite") {
                 boolean read(Config c) { return c.ahRequireVolume; }
                 void write(Config c, boolean v) { c.ahRequireVolume = v; }
+            },
+            new BoolSetting("ah.upgrades", "Conta il valore degli upgrade: recombobulator, potato book, incantesimi,"
+                + " master star, gemme, pergamene, oggetti dei pet...") {
+                boolean read(Config c) { return c.ahUpgrades; }
+                void write(Config c, boolean v) { c.ahUpgrades = v; }
+            },
+            new IntSetting("ah.upgradePercent", "Quanta parte del valore degli upgrade contare, in %", 0, 100) {
+                int read(Config c) { return c.ahUpgradePercent; }
+                void write(Config c, int v) { c.ahUpgradePercent = v; }
             },
             new ChoiceSetting("ah.strategy", "Come stimare il valore: conservative = il minore tra LBIN e vendite recenti,"
                 + " lbin = prezzo BIN più basso, sales = mediana delle vendite", "conservative", "lbin", "sales") {
@@ -262,6 +277,15 @@ public final class Config {
             new IntSetting("bz.npc.cooldownMinutes", "Minuti prima di riavvisare per lo stesso flip NPC", 1, 1440) {
                 int read(Config c) { return c.bzNpcCooldownMinutes; }
                 void write(Config c, int v) { c.bzNpcCooldownMinutes = v; }
+            }),
+        new Section("Guadagni",
+            new BoolSetting("tracker.enabled", "Riconosce in chat acquisti e vendite (aste e bazaar) e calcola i guadagni") {
+                boolean read(Config c) { return c.trackerEnabled; }
+                void write(Config c, boolean v) { c.trackerEnabled = v; }
+            },
+            new BoolSetting("tracker.messages", "Scrive in chat quando registra un acquisto all'asta o chiude un flip") {
+                boolean read(Config c) { return c.trackerMessages; }
+                void write(Config c, boolean v) { c.trackerMessages = v; }
             }),
         new Section("Fonti dati",
             new BoolSetting("source.neu", "Usa i prezzi di NotEnoughUpdates (moulberry.codes)") {

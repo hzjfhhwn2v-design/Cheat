@@ -14,9 +14,16 @@ public final class AuctionFlip {
     public final double percent;
     /** Only one price reference was available: worth a manual check. */
     public final boolean weak;
+    /** Only a flip thanks to the value of its upgrades. */
+    public final boolean upgradeOnly;
 
     public AuctionFlip(AuctionIndex.Listing listing, Valuation valuation, double resale, double fees, double profit,
                        double percent, boolean weak) {
+        this(listing, valuation, resale, fees, profit, percent, weak, false);
+    }
+
+    public AuctionFlip(AuctionIndex.Listing listing, Valuation valuation, double resale, double fees, double profit,
+                       double percent, boolean weak, boolean upgradeOnly) {
         this.listing = listing;
         this.valuation = valuation;
         this.resale = resale;
@@ -24,6 +31,7 @@ public final class AuctionFlip {
         this.profit = profit;
         this.percent = percent;
         this.weak = weak;
+        this.upgradeOnly = upgradeOnly;
     }
 
     public String command() {

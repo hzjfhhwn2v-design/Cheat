@@ -87,8 +87,13 @@ comune alle build Fabric in `fabric-common/`; le versioni usate per ogni build F
 | `/flipscout ah on\|off` | notifiche delle aste |
 | `/flipscout bz on\|off` | notifiche del bazaar; anche `bz flip\|crash\|npc on\|off` per i singoli tipi |
 | `/flipscout top [ah\|bz] [n]` | le migliori occasioni di questo momento, anche quelle già in vendita da tempo |
-| `/flipscout recent` | ultime 30 notifiche, ancora cliccabili |
-| `/flipscout open` | apre l'ultima notifica (su Forge c'è anche un tasto in *Controlli → FlipScout*) |
+| `/flipscout recent` | ultime 30 notifiche, ancora cliccabili; segna le aste già vendute e dopo quanti secondi |
+| `/flipscout open` | apre l'ultima notifica, o ti avvisa se l'asta è già stata comprata (su Forge c'è anche un tasto in *Controlli → FlipScout*) |
+| `/flipscout guadagni` | quanto hai guadagnato: sessione, oggi, totale |
+| `/flipscout sessione [pausa\|riprendi\|reset\|storico]` | la sessione: dettagli, pausa, ripresa, reset (la vecchia va nello storico) |
+| `/flipscout totale [reset]` | totale e ultimi 7 giorni; `totale reset conferma` lo azzera |
+| `/flipscout flip` | gli ultimi 10 flip chiusi: comprato, venduto, profitto |
+| `/flipscout magazzino [svuota]` | cose comprate e non ancora rivendute, e vendite da ritirare |
 | `/flipscout set <chiave> <valore>` | cambia un'impostazione, es. `set ah.minProfit 2m` |
 | `/flipscout config [filtro]` | mostra le impostazioni (clic per modificarle) |
 | `/flipscout blacklist add\|remove\|list [ID]` | oggetti da ignorare, es. `blacklist add HYPERION` |
@@ -112,6 +117,8 @@ Stanno in `config/flipscout/flipscout.properties` (ogni voce è commentata). Puo
 | `ah.minVolume` | `1` | vendite al giorno minime (se il dato è noto) |
 | `ah.requireVolume` | `off` | scarta gli oggetti di cui non si conoscono le vendite |
 | `ah.strategy` | `conservative` | `conservative` = il minore tra BIN più basso e mediana vendite; `lbin`; `sales` |
+| `ah.upgrades` | `on` | conta il valore degli upgrade (vedi sotto) |
+| `ah.upgradePercent` | `80` | quanta parte del valore degli upgrade contare, in % |
 | `ah.fullScanMinutes` | `30` | ogni quanto riscaricare tutte le aste |
 | `ah.pollPages` | `2` | pagine di aste nuove controllate ogni minuto |
 | `bz.intervalSeconds` | `20` | ogni quanto controllare il bazaar |
@@ -121,6 +128,8 @@ Stanno in `config/flipscout/flipscout.properties` (ogni voce è commentata). Puo
 | `bz.crash.minProfit` | `500k` | profitto minimo stimato di un crollo |
 | `bz.npc.minProfit` | `200k` | profitto minimo di un flip bazaar → NPC |
 | `source.neu` / `source.coflnet` | `on` | usa i dati di NEU e di Coflnet |
+| `tracker.enabled` | `on` | riconosce in chat acquisti e vendite e calcola i guadagni |
+| `tracker.messages` | `on` | scrive in chat quando registra un acquisto all'asta o chiude un flip |
 
 Le tasse (`ah.fee.*`, `bz.tax`) sono quelle attuali di Hypixel: creazione asta 1% sotto i 10M, 2% fino a 100M,
 2,5% sopra, più 1% sul ritiro dei coins da 1M in su; bazaar 1,25%. Se Hypixel le cambia, aggiornale lì.
@@ -144,6 +153,49 @@ valutato al prezzo di vendita istantanea del bazaar.
 
 Per non confrontare cose diverse: i pet sono raggruppati per tipo, rarità e fascia di livello (e skin), i libri per
 incantesimo e livello, le rune per tipo e livello, le armature con attributi per combinazione di attributi.
+
+**Upgrade.** Un'arma piena di upgrade messa al prezzo di una base è un'occasione. Il mod riconosce:
+
+- recombobulator, hot e fuming potato book, master star;
+- incantesimi che non vengono dal tavolo, gemme;
+- pergamene della Necron's Blade, Art of War e Art of Peace, Wood Singularity, Farming for Dummies, Transmission
+  Tuner e simili;
+- tinture, parti dei trapani, oggetti tenuti dai pet.
+
+Ogni pezzo vale il suo prezzo (vendita istantanea al bazaar, altrimenti all'asta) per una percentuale che dipende dal
+tipo: 100% per master star, gemme e pergamene, 80% per il recombobulator, 85% per gli incantesimi, e così via.
+
+- **Cosa conta:** solo la differenza rispetto agli upgrade dell'asta più economica dello stesso oggetto, e di questa
+  solo l'80% (`ah.upgradePercent`). Gli upgrade possono al massimo raddoppiare il valore.
+- **Più margine se serve:** se un'asta è un flip solo grazie agli upgrade, serve il doppio della percentuale minima e la
+  notifica dice `+upgrade`.
+- **Dettagli:** passando il mouse vedi i pezzi contati.
+- **Cosa non conta:** le stelle normali (quelle a essenza).
+
+## Guadagni
+
+Il mod legge i messaggi di Hypixel in chat e tiene il conto di quello che compri e vendi:
+
+- **Aste:**
+  - "You purchased …" quando compri un BIN;
+  - "[Auction] … bought …" quando qualcuno compra la tua asta mentre sei online;
+  - "You collected … coins from selling …" quando ritiri i coins, anche per le vendite fatte mentre eri offline.
+
+  Ogni vendita conta una volta sola.
+- **Bazaar:** acquisti e vendite istantanee, buy order e sell offer quando li ritiri.
+
+Ogni vendita viene abbinata all'acquisto più vecchio dello stesso oggetto, anche se nel frattempo l'hai riforgiato. Il
+profitto è l'incasso dopo le tasse meno quanto l'avevi pagato. Le vendite di cose che non hai comprato (drop, farming)
+non contano nel profitto.
+
+- **Sessione:** parte da sola. `/flipscout sessione pausa` smette di contare (il totale continua), `riprendi` riparte e
+  `reset` la mette nello storico e ne inizia una nuova. Il tempo conta solo mentre giochi con la sessione attiva.
+- **Oggi e totale:** contano sempre. `/flipscout totale reset conferma` azzera il totale.
+- **Dove sta:** tutto è salvato in `config/flipscout/guadagni.json`.
+
+Le aste vinte con un'offerta (non BIN) non hanno il prezzo nel messaggio, quindi non vengono contate come acquisti. Se un
+acquisto o una vendita non viene riconosciuto, la riga esatta si trova in `logs/latest.log`: serve per correggere il
+riconoscimento.
 
 ## Da sapere
 

@@ -4,6 +4,7 @@ import dev.flipscout.core.FlipScout;
 import dev.flipscout.core.Log;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraftforge.client.ClientCommandHandler;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
@@ -49,6 +50,14 @@ public class FlipScoutForge {
         ClientRegistry.registerKeyBinding(openKey);
         MinecraftForge.EVENT_BUS.register(this);
         flipScout.start();
+    }
+
+    @SubscribeEvent
+    public void onChat(ClientChatReceivedEvent event) {
+        // Type 2 is the action bar above the hotbar, never a purchase or a sale.
+        if (event.type != 2 && event.message != null) {
+            flipScout.onChat(event.message.getUnformattedText());
+        }
     }
 
     @SubscribeEvent

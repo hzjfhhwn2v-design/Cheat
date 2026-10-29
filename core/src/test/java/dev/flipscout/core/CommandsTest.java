@@ -36,6 +36,69 @@ class CommandsTest {
     }
 
     @Test
+    void profitCommands() {
+        flipScout.onChat("[Bazaar] Bought 1x Enchanted Diamond for 160 coins!");
+        flipScout.onChat("[Bazaar] Sold 1x Enchanted Diamond for 200 coins!");
+        run("guadagni");
+        String text = platform.allText();
+        assertTrue(text.contains("Sessione (attiva): +40 in 1 flip"), text);
+        assertTrue(text.contains("Totale: +40 in 1 flip"), text);
+        run("sessione", "pausa");
+        assertTrue(platform.allText().contains("Sessione in pausa"), platform.allText());
+        run("sessione", "reset");
+        run("sessione", "storico");
+        assertTrue(platform.allText().contains("Sessioni precedenti"), platform.allText());
+        run("flip");
+        assertTrue(platform.allText().contains("Enchanted Diamond 160 → 200 +40"), platform.allText());
+        run("totale", "reset");
+        assertTrue(platform.allText().contains("totale reset conferma"), platform.allText());
+        assertEquals(40, flipScout.tracker().total().profit, 1e-9);
+        run("totale", "reset", "conferma");
+        assertEquals(0, flipScout.tracker().total().profit, 1e-9);
+        assertEquals(Arrays.asList("pausa", "riprendi", "reset", "storico"), flipScout.complete(new String[] {"sessione", ""}));
+    }
+
+    @Test
+    void recentShowsWhichAuctionsSold() {
+        long t0 = 1_800_000_000_000L;
+        AtomicLong clock = new AtomicLong(t0 + 5_000);
+        FakeFetcher http = new FakeFetcher();
+        FakePlatform platform = new FakePlatform();
+        platform.uuid = "me";
+        FlipScout fs = new FlipScout(platform, new File(dir, "recent"), http, clock::get);
+        fs.config().sourceCoflnet = false;
+        String h = "https://api.hypixel.net/v2/skyblock/";
+        String hyperion = TestData.plainItem("HYPERION");
+        http.put(h + "auctions?page=0", TestData.auctionPage(0, 1, t0,
+            TestData.auction("a1", "s1", "Hyperion", "LEGENDARY", 900_000_000L, true, t0 - 3_600_000L, hyperion)));
+        String[] sold = new String[5];
+        for (int i = 0; i < sold.length; i++) {
+            sold[i] = TestData.ended("e" + i, 893_000_000L + i * 1_000_000L, true, t0 - 30_000, hyperion);
+        }
+        http.put(h + "auctions_ended", TestData.endedPage(t0, sold));
+        fs.engine().tick();
+
+        long t1 = t0 + 60_000;
+        http.put(h + "auctions?page=0", TestData.auctionPage(0, 1, t1,
+            TestData.auction("a1", "s1", "Hyperion", "LEGENDARY", 900_000_000L, true, t0 - 3_600_000L, hyperion),
+            TestData.auction("new", "s2", "Hyperion", "LEGENDARY", 800_000_000L, true, t1 - 10_000, hyperion)));
+        clock.set(t1 + 1_000);
+        fs.engine().tick();
+        long t2 = t1 + 60_000;
+        http.put(h + "auctions_ended", TestData.endedPage(t2, TestData.ended("new", 800_000_000L, true, t1 + 2_000, hyperion)));
+        clock.set(t2 + 1_000);
+        fs.engine().tick();
+
+        fs.command(new String[] {"recent"});
+        String text = platform.allText();
+        assertTrue(text.contains("1 aste su 1 già vendute, metà entro 12s"), text);
+        assertTrue(text.contains("[venduta dopo 12s]"), text);
+        fs.command(new String[] {"open"});
+        assertTrue(platform.commands.isEmpty());
+        assertTrue(platform.allText().contains("già stata comprata"), platform.allText());
+    }
+
+    @Test
     void configFileIsCreatedWithEveryOption() throws IOException {
         assertTrue(configFile.isFile());
         String content = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);

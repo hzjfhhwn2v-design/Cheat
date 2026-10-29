@@ -81,11 +81,34 @@ public final class Engine {
         public final Msg message;
         /** Command with leading slash, or null. */
         public final String command;
+        /** For auction flips: the auction, and when it was listed and notified (Hypixel's clock). */
+        public final String auctionUuid;
+        public final long listedAt;
+        public final long notifiedAt;
+        private volatile long soldAt;
+        private volatile boolean boughtByYou;
 
-        Notification(long time, Msg message, String command) {
+        Notification(long time, Msg message, String command, String auctionUuid, long listedAt, long notifiedAt) {
             this.time = time;
             this.message = message;
             this.command = command;
+            this.auctionUuid = auctionUuid;
+            this.listedAt = listedAt;
+            this.notifiedAt = notifiedAt;
+        }
+
+        /** When the auction sold (Hypixel's clock), 0 while we have not seen it sell. */
+        public long soldAt() {
+            return soldAt;
+        }
+
+        public boolean boughtByYou() {
+            return boughtByYou;
+        }
+
+        void sold(long at, boolean byYou) {
+            boughtByYou = byYou;
+            soldAt = at;
         }
     }
 
@@ -520,7 +543,7 @@ public final class Engine {
         }
         ItemKey existing = canonicalKeys.putIfAbsent(decoded.key.key, decoded.key);
         if (existing != null && existing != decoded.key && existing.equals(decoded.key)) {
-            return new ItemKeys.Decoded(existing, decoded.count, decoded.name);
+            return new ItemKeys.Decoded(existing, decoded.count, decoded.name, decoded.upgrades);
         }
         return decoded;
     }
@@ -533,7 +556,7 @@ public final class Engine {
             ItemKeys.Decoded decoded = auction.decoded;
             AuctionIndex.Listing listing = new AuctionIndex.Listing(auction.uuid, normalizeUuid(auction.seller),
                 decoded.name, auction.tier == null ? null : auction.tier.intern(), decoded.key, auction.startingBid,
-                decoded.count, auction.start, auction.end, now, scan);
+                decoded.count, auction.start, auction.end, now, scan, decoded.upgrades);
             index.add(listing);
             if (initialScanDone && now - clockSkew - auction.start < FRESH_MS) {
                 consider(listing);
@@ -581,7 +604,7 @@ public final class Engine {
 
     private void notifyAuction(AuctionFlip flip) {
         status.auctionNotifications.incrementAndGet();
-        deliver(notifier.auction(flip, serverTime()), true, clock.getAsLong());
+        deliver(notifier.auction(flip, serverTime()), true, clock.getAsLong(), flip.listing);
     }
 
     /**
@@ -684,6 +707,7 @@ public final class Engine {
                 long time = ended.timestamp > 0 ? ended.timestamp : now;
                 sales.add(decoded.key.key, (int) (time / MINUTE), (double) ended.price / decoded.count);
             }
+            markSold(page.auctions);
             status.ok("vendite");
             endedBackoff.reset();
             nextEndedPoll = expectedNextUpdate(page.lastUpdated, page.serverDate, clock.getAsLong());
@@ -693,6 +717,30 @@ public final class Engine {
         } catch (RuntimeException e) {
             status.error("vendite", e);
             nextEndedPoll = clock.getAsLong() + endedBackoff.fail();
+        }
+    }
+
+    /** Marks the notified auctions that have just sold, so /flipscout recent can tell. */
+    private void markSold(List<EndedAuction> ended) {
+        String me = platform.playerUuid();
+        Map<String, EndedAuction> byId = null;
+        synchronized (recent) {
+            for (Notification notification : recent) {
+                if (notification.auctionUuid == null || notification.soldAt() > 0) {
+                    continue;
+                }
+                if (byId == null) {
+                    byId = new HashMap<String, EndedAuction>();
+                    for (EndedAuction auction : ended) {
+                        byId.put(normalizeUuid(auction.auctionId), auction);
+                    }
+                }
+                EndedAuction sale = byId.get(normalizeUuid(notification.auctionUuid));
+                if (sale != null) {
+                    notification.sold(sale.timestamp > 0 ? sale.timestamp : serverTime(),
+                        me != null && me.equals(normalizeUuid(sale.buyer)));
+                }
+            }
         }
     }
 
@@ -740,7 +788,7 @@ public final class Engine {
             }
             shown++;
             status.bazaarNotifications.incrementAndGet();
-            deliver(notifier.bazaar(flip), false, now);
+            deliver(notifier.bazaar(flip), false, now, null);
         }
         if (cooldowns.size() > 10_000) {
             Iterator<Map.Entry<String, Long>> it = cooldowns.entrySet().iterator();
@@ -843,9 +891,12 @@ public final class Engine {
 
     // ---- Notifications (any thread) ----
 
-    private void deliver(Msg message, boolean auction, long now) {
+    private void deliver(Msg message, boolean auction, long now, AuctionIndex.Listing listing) {
+        Notification notification = listing == null
+            ? new Notification(now, message, message.firstCommand(), null, 0, 0)
+            : new Notification(now, message, message.firstCommand(), listing.uuid, listing.start, serverTime());
         synchronized (recent) {
-            recent.addFirst(new Notification(now, message, message.firstCommand()));
+            recent.addFirst(notification);
             while (recent.size() > MAX_RECENT) {
                 recent.removeLast();
             }
@@ -864,8 +915,18 @@ public final class Engine {
 
     public List<AuctionFlip> topAuctions(int limit) {
         String me = platform.playerUuid();
-        List<AuctionFlip> flips = new ArrayList<AuctionFlip>();
+        // The cheapest listing of each item, plus upgraded ones, which can be flips without being the cheapest.
+        Map<String, AuctionIndex.Listing> candidates = new LinkedHashMap<String, AuctionIndex.Listing>();
         for (AuctionIndex.Listing listing : index.cheapestPerKey()) {
+            candidates.put(listing.uuid, listing);
+        }
+        if (config.ahUpgrades) {
+            for (AuctionIndex.Listing listing : index.withUpgrades()) {
+                candidates.put(listing.uuid, listing);
+            }
+        }
+        List<AuctionFlip> flips = new ArrayList<AuctionFlip>();
+        for (AuctionIndex.Listing listing : candidates.values()) {
             if (me != null && me.equals(listing.seller)) {
                 continue;
             }

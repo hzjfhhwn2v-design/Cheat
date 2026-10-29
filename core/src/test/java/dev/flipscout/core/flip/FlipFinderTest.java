@@ -8,6 +8,7 @@ import dev.flipscout.core.api.CoflnetApi;
 import dev.flipscout.core.api.HypixelApi;
 import dev.flipscout.core.api.ItemCatalog;
 import dev.flipscout.core.item.ItemKey;
+import dev.flipscout.core.item.ItemKeys;
 import dev.flipscout.core.market.AuctionIndex;
 import dev.flipscout.core.market.BazaarHistory;
 import dev.flipscout.core.market.CoflnetSource;
@@ -88,6 +89,44 @@ class FlipFinderTest {
         assertEquals(2, flip.valuation.references);
         assertEquals(2, flip.valuation.otherListings);
         assertEquals("/viewauction new", flip.command());
+    }
+
+    private AuctionIndex.Listing upgraded(String uuid, long price, Map<String, Object> extra) {
+        return new AuctionIndex.Listing(uuid, "seller", "Hyperion", "LEGENDARY", HYPERION, price, 1, NOW - 1_000,
+            NOW + 3_600_000L, NOW, 1, ItemKeys.upgrades("HYPERION", extra));
+    }
+
+    @Test
+    void upgradesAreCountedBeyondThoseOfTheCheapestListing() throws IOException {
+        hyperionMarket();
+        prices.setBazaar(snapshot(
+            TestData.product("RECOMBOBULATOR_3000", new double[][] {{11_000_000, 5}}, new double[][] {{10_000_000, 5}},
+                1000, 1000),
+            TestData.product("FIRST_MASTER_STAR", new double[][] {{21_000_000, 5}}, new double[][] {{20_000_000, 5}},
+                1000, 1000),
+            TestData.product("SECOND_MASTER_STAR", new double[][] {{41_000_000, 5}}, new double[][] {{40_000_000, 5}},
+                1000, 1000),
+            TestData.product("THIRD_MASTER_STAR", new double[][] {{81_000_000, 5}}, new double[][] {{80_000_000, 5}},
+                1000, 1000)));
+        Map<String, Object> extra = TestData.map("rarity_upgrades", 1, "upgrade_level", 8);
+        // 850M against a plain value of 895M: not a flip as a plain Hyperion...
+        AuctionIndex.Listing listing = upgraded("up", 850_000_000L, extra);
+        config.ahUpgrades = false;
+        assertNull(finder.evaluate(listing, false));
+
+        // ...but its recombobulator and three master stars are worth 0.8 x 10M + 20M + 40M + 80M = 148M,
+        // 80% of which counts: 118.4M.
+        config.ahUpgrades = true;
+        AuctionFlip flip = finder.evaluate(listing, false);
+        assertNotNull(flip);
+        assertTrue(flip.upgradeOnly);
+        assertEquals(118_400_000, flip.valuation.upgradeExtra, 1);
+        assertEquals(895_000_000 + 118_400_000, flip.resale, 1);
+        assertEquals(4, flip.valuation.upgradeParts.size());
+
+        // When the cheapest other Hyperion has the same upgrades, they are already in its price.
+        index.add(upgraded("a0", 880_000_000L, extra));
+        assertNull(finder.evaluate(listing, false));
     }
 
     @Test
