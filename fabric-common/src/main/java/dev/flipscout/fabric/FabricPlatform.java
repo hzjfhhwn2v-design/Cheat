@@ -46,9 +46,8 @@ final class FabricPlatform implements Platform {
         Component component = toComponent(message);
         Minecraft client = Minecraft.getInstance();
         client.execute(() -> {
-            // Goes to the chat on every version, while the chat HUD itself moved around in 26.x.
             if (client.player != null) {
-                client.player.sendSystemMessage(component);
+                ChatOutput.show(client, component);
             }
         });
     }

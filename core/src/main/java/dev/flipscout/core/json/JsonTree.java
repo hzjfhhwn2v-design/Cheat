@@ -17,6 +17,7 @@ public final class JsonTree {
     private JsonTree() {
     }
 
+    @SuppressWarnings("deprecation") // setLenient: see Json.reader
     public static Object parse(Reader reader) throws IOException {
         JsonReader in = new JsonReader(reader);
         in.setLenient(true);

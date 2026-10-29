@@ -23,7 +23,9 @@ dependencies {
 }
 
 sourceSets.main {
-    // The platform-independent code lives in ../core.
+    // Shared Fabric adapter and platform-independent core; src/ only holds what differs on 1.21.
+    java.srcDir("../fabric-common/src/main/java")
+    resources.srcDir("../fabric-common/src/main/resources")
     java.srcDir("../core/src/main/java")
     resources.srcDir("../core/src/main/resources")
 }

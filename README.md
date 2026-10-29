@@ -54,8 +54,9 @@ cd fabric-1.21 && ./gradlew build    # Gradle su Java 25; per un'altra 1.21.x: -
 cd fabric-26 && ./gradlew build      # Java 25; Minecraft 26.x
 ```
 
-Il jar finisce in `build/libs`. Il codice comune sta in `core/` (`cd core && ./gradlew test` per i test); le versioni
-usate per ogni build Fabric sono in `.github/workflows/build.yml`.
+Il jar finisce in `build/libs`. Il codice comune sta in `core/` (`cd core && ./gradlew test` per i test), quello
+comune alle build Fabric in `fabric-common/`; le versioni usate per ogni build Fabric sono in
+`.github/workflows/build.yml`.
 
 ## Comandi
 

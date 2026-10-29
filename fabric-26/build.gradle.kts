@@ -23,9 +23,9 @@ dependencies {
 }
 
 sourceSets.main {
-    // Same adapter as the 1.21 build (it is written against the Mojang names), plus the core.
-    java.srcDir("../fabric-1.21/src/main/java")
-    resources.srcDir("../fabric-1.21/src/main/resources")
+    // Shared Fabric adapter and platform-independent core; src/ only holds what differs on 26.x.
+    java.srcDir("../fabric-common/src/main/java")
+    resources.srcDir("../fabric-common/src/main/resources")
     java.srcDir("../core/src/main/java")
     resources.srcDir("../core/src/main/resources")
 }

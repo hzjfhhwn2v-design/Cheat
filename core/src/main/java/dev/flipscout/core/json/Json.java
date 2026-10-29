@@ -16,6 +16,8 @@ public final class Json {
     private Json() {
     }
 
+    // setLenient is deprecated in recent Gson, but Gson 2.2.4 (Minecraft 1.8.9) has nothing else.
+    @SuppressWarnings("deprecation")
     public static JsonReader reader(InputStream in) {
         JsonReader reader = new JsonReader(new InputStreamReader(in, StandardCharsets.UTF_8));
         reader.setLenient(true);
