@@ -44,3 +44,19 @@ tasks.processResources {
         expand("version" to project.version, "minecraft_range" to minecraftRange, "java_version" to "25")
     }
 }
+
+// Temporary: lists the screen API of this Minecraft version, to port the settings screen.
+tasks.register("printScreenApi") {
+    val classpath = sourceSets.main.get().compileClasspath
+    doLast {
+        val loader = java.net.URLClassLoader(classpath.files.map { it.toURI().toURL() }.toTypedArray(), null)
+        for (name in listOf("net.minecraft.client.Minecraft", "net.minecraft.client.gui.screens.Screen")) {
+            val type = Class.forName(name, false, loader)
+            println("== $name")
+            (type.declaredMethods.map { it.toString() } + type.declaredFields.map { it.toString() })
+                .filter { it.contains("Screen") || it.contains("screen") || it.contains("close", ignoreCase = true) }
+                .sorted()
+                .forEach { println(it) }
+        }
+    }
+}
