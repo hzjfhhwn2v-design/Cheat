@@ -1,0 +1,11 @@
+[
+  {
+    "modid": "flipscout",
+    "name": "FlipScout",
+    "description": "Notifiche dei flip di aste e bazaar di Hypixel SkyBlock con i dati dell'API ufficiale, di NEU e di Coflnet. Non compra niente da solo.",
+    "version": "${version}",
+    "mcversion": "1.8.9",
+    "authorList": ["FlipScout"],
+    "credits": "Dati: Hypixel API, NotEnoughUpdates (moulberry.codes), Coflnet (sky.coflnet.com)"
+  }
+]

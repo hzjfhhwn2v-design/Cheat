@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "flipscout",
+  "version": "${version}",
+  "name": "FlipScout",
+  "description": "Notifiche dei flip di aste e bazaar di Hypixel SkyBlock con i dati dell'API ufficiale, di NEU e di Coflnet. Non compra niente da solo.",
+  "authors": ["FlipScout"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.flipscout.fabric.FlipScoutFabric"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_range}",
+    "java": ">=21"
+  }
+}
