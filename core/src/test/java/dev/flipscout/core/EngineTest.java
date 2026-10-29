@@ -360,6 +360,54 @@ class EngineTest {
     }
 
     @Test
+    void salesPricesAreFetchedAheadOfTimeForValuableItems() {
+        config.sourceCoflnet = true;
+        ManualExecutor background = new ManualExecutor();
+        engine.useExecutors(null, background);
+        String coflnet = "https://sky.coflnet.com/api/item/price/";
+        http.put(coflnet + "HYPERION", "{\"median\":890000000,\"volume\":4}");
+        http.put(coflnet + "GIANTS_SWORD", "{\"median\":48000000,\"volume\":10}");
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            TestData.auction("g1", "s2", "Giant's Sword", "LEGENDARY", 50_000_000L, true, T0 - 3_600_000L,
+                TestData.plainItem("GIANTS_SWORD")),
+            TestData.auction("d1", "s3", "Dirt", "COMMON", 10L, true, T0 - 3_600_000L, TestData.plainItem("DIRT"))));
+        http.put(ENDED, TestData.endedPage(T0));
+        engine.tick();
+        background.runAll();
+        // Not right away: NEU and our own sales get their chance first.
+        assertEquals(0, http.count(coflnet + "HYPERION"));
+
+        // Then the most valuable item first, one every ten seconds; those too cheap to flip never.
+        clock.addAndGet(2 * 60_000L);
+        engine.tick();
+        background.runAll();
+        assertEquals(1, http.count(coflnet + "HYPERION"));
+        assertEquals(0, http.count(coflnet + "GIANTS_SWORD"));
+        clock.addAndGet(10_000);
+        engine.tick();
+        background.runAll();
+        assertEquals(1, http.count(coflnet + "GIANTS_SWORD"));
+        clock.addAndGet(10_000);
+        engine.tick();
+        background.runAll();
+        assertEquals(0, http.count(coflnet + "DIRT"));
+        assertEquals(1, http.count(coflnet + "HYPERION"));
+
+        // A cheap Hyperion is now judged on two prices straight away, with nothing to wait for.
+        long t1 = T0 + 150_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 10_000)));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        List<Msg> flips = platform.withCommand("/viewauction new");
+        assertEquals(1, flips.size());
+        assertFalse(flips.get(0).toPlainString().contains("⚠"), flips.get(0).toPlainString());
+        assertEquals(1, http.count(coflnet + "HYPERION"));
+    }
+
+    @Test
     void notificationsShowHowOldTheAuctionIs() {
         initialMarket();
         long t1 = T0 + 60_000;

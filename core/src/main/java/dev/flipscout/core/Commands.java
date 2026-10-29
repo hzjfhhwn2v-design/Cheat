@@ -395,7 +395,8 @@ final class Commands {
                 + " medie §8(" + Text.ago(now, s.lastNeu) + ")"
             : "§8disattivato");
         line("Coflnet", config.sourceCoflnet
-            ? "ultima risposta " + Text.ago(now, engine.coflnet.lastSuccess())
+            ? Coins.full(engine.coflnet.cachedPrices()) + " prezzi in memoria, ultima risposta "
+                + Text.ago(now, engine.coflnet.lastSuccess())
                 + (engine.coflnet.lastError() != null ? " §8(" + engine.coflnet.lastError() + ")" : "")
             : "§8disattivato");
         line("Oggetti conosciuti", Coins.full(engine.items().size()));

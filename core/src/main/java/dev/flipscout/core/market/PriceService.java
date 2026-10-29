@@ -149,6 +149,28 @@ public final class PriceService {
         }
     }
 
+    /**
+     * True when only Coflnet could give {@code key} a sales price right now: no bazaar price, no
+     * NEU average, too few sales of our own, and Coflnet not asked recently.
+     */
+    public boolean needsRemoteSales(ItemKey key) {
+        if (!config.sourceCoflnet || key.coflTag == null || coflnet.isKnown(key.coflTag)) {
+            return false;
+        }
+        BazaarSnapshot snapshot = bazaar;
+        if (key.bazaarId != null && snapshot != null) {
+            BazaarProduct product = snapshot.get(key.bazaarId);
+            if (product != null && product.instaSell() > 0) {
+                return false;
+            }
+        }
+        if (config.sourceNeu && key.neuKey != null && key.neuExact && neuAverages.containsKey(key.neuKey)) {
+            return false;
+        }
+        int nowMinute = (int) (clock.getAsLong() / 60_000L);
+        return sales.stats(key.key, nowMinute, config.ahMinSalesSamples).samples < config.ahMinSalesSamples;
+    }
+
     /** True when a Coflnet lookup could add something the local data lacks. */
     public boolean wouldUseRemote(ItemKey key, Valuation v) {
         return config.sourceCoflnet && key.coflTag != null && !v.bazaar

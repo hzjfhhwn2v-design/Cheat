@@ -133,8 +133,9 @@ Fonti:
   il bazaar e i prezzi di vendita agli NPC. Con le vendite il mod costruisce un suo storico, salvato in
   `config/flipscout/sales.bin`, quindi le stime migliorano dopo qualche ora di gioco.
 - **NotEnoughUpdates** (`moulberry.codes`): BIN più basso e media delle vendite degli ultimi 3 giorni.
-- **Coflnet** (`sky.coflnet.com`): mediana delle vendite, chiesta solo per confermare un possibile flip quando mancano
-  dati propri, con cache e un limite di richieste al minuto.
+- **Coflnet** (`sky.coflnet.com`): mediana delle vendite, per gli oggetti di cui il mod non ha ancora vendite sue né la
+  media di NEU. La chiede in anticipo, in background, partendo dagli oggetti più costosi (al massimo 6 richieste al
+  minuto, ogni risposta vale 6 ore), e per confermare un possibile flip. In tutto al massimo 15 richieste al minuto.
 
 Il valore di un oggetto (strategia `conservative`) è il **minore** tra il BIN più basso degli *altri* venditori e la
 mediana delle vendite recenti: un oggetto vale quanto si vende, ma non più di quanto lo si può comprare. Se c'è un solo

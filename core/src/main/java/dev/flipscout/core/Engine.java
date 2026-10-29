@@ -70,6 +70,10 @@ public final class Engine {
     /** A full scan whose pages have not all arrived by then is closed as incomplete. */
     private static final long SCAN_TIMEOUT_MS = 3 * MINUTE;
     private static final int MAX_PENDING_CONFIRMATIONS = 4;
+    /** Coflnet sales prices are looked up ahead of time at most this often... */
+    private static final long PREFETCH_EVERY_MS = 10_000L;
+    /** ...starting a while after the first scan, once NEU and our own sales had their chance. */
+    private static final long PREFETCH_DELAY_MS = 2 * MINUTE;
 
     /** A notification kept for /flipscout recent and /flipscout open. */
     public static final class Notification {
@@ -160,6 +164,7 @@ public final class Engine {
     private long nextAuctionPoll;
     private long nextExpire;
     private long nextSave;
+    private long nextPrefetch;
     private long lastAuctionsUpdate;
     private int auctionStale;
     private final Backoff auctionBackoff = new Backoff();
@@ -170,6 +175,7 @@ public final class Engine {
     private final AtomicBoolean endedJob = new AtomicBoolean();
     private final AtomicBoolean bazaarJob = new AtomicBoolean();
     private final AtomicBoolean saveJob = new AtomicBoolean();
+    private final AtomicBoolean prefetchJob = new AtomicBoolean();
     private final AtomicInteger pendingConfirmations = new AtomicInteger();
     private volatile long nextItems;
     private volatile long nextNeuLowestBins;
@@ -332,6 +338,10 @@ public final class Engine {
                 index.removeExpired(now - clockSkew);
                 nextExpire = now + 30_000L;
             }
+            if (config.sourceCoflnet && initialScanDone && now >= nextPrefetch) {
+                nextPrefetch = now + PREFETCH_EVERY_MS;
+                background(prefetchJob, this::prefetchSalesPrice);
+            }
         }
         now = clock.getAsLong();
         if (config.bzEnabled && now >= nextBazaarPoll) {
@@ -429,8 +439,9 @@ public final class Engine {
         status.fullScanMillis = end - s.startedAt;
         // With pages missing some cheaper listings may be unknown, which would make flips look
         // better than they are: notify only once at least nine pages out of ten are in.
-        if (complete || s.mergedPages * 10 >= s.pages * 9) {
+        if (!initialScanDone && (complete || s.mergedPages * 10 >= s.pages * 9)) {
             initialScanDone = true;
+            nextPrefetch = end + PREFETCH_DELAY_MS;
         }
         if (complete && !s.mixed) {
             status.ok("aste");
@@ -611,6 +622,39 @@ public final class Engine {
     /** Current time on Hypixel's clock (auction timestamps use it). */
     public long serverTime() {
         return clock.getAsLong() - clockSkew;
+    }
+
+    // ---- Coflnet prices ahead of time (background) ----
+
+    /**
+     * Asks Coflnet for the sales price of the most valuable item we have no sales price for, so
+     * that when one is listed cheap the flip is judged at once. One item per run.
+     */
+    private void prefetchSalesPrice() {
+        long budget = config.budget;
+        List<AuctionIndex.Listing> candidates = new ArrayList<AuctionIndex.Listing>();
+        for (AuctionIndex.Listing listing : index.cheapestPerKey()) {
+            ItemKey key = listing.key;
+            // Worth less than the minimum profit it can never be a flip; far above the budget it
+            // would never be bought.
+            if (key.coflTag == null || listing.unitPrice < config.ahMinProfit
+                || (budget > 0 && listing.unitPrice > 2.0 * budget) || config.isBlacklisted(key.id, key.key)) {
+                continue;
+            }
+            candidates.add(listing);
+        }
+        Collections.sort(candidates, new Comparator<AuctionIndex.Listing>() {
+            @Override
+            public int compare(AuctionIndex.Listing a, AuctionIndex.Listing b) {
+                return Double.compare(b.unitPrice, a.unitPrice);
+            }
+        });
+        for (AuctionIndex.Listing listing : candidates) {
+            if (prices.needsRemoteSales(listing.key)) {
+                coflnet.prefetch(listing.key.coflTag);
+                return;
+            }
+        }
     }
 
     // ---- Sold auctions (background) ----
