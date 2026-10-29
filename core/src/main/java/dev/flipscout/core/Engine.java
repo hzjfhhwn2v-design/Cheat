@@ -636,9 +636,11 @@ public final class Engine {
         }
         if (waiting) {
             // We were asking every half second, so it has only just appeared.
-            publishDelay = publishDelay == 0 ? seen : (publishDelay * 3 + seen) / 4;
-        } else if (seen < publishDelay) {
-            publishDelay = seen;
+            publishDelay = publishDelay == 0 ? seen : (publishDelay + seen) / 2;
+        } else {
+            // We only asked once it was out, so it may have come out a good while earlier (one slow
+            // refresh can teach us too long a delay): start asking well before that next time.
+            publishDelay = Math.max(0, Math.min(publishDelay, seen) - 3_000L);
         }
         status.publishDelay = publishDelay;
     }

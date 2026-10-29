@@ -485,6 +485,33 @@ class EngineTest {
     }
 
     @Test
+    void learnsWhenHypixelPublishesEachRefresh() {
+        initialMarket();
+        // Each refresh is prepared every minute and shows up 8s later, except the first, which is 18s late.
+        int published = 0;
+        int requestsBefore = 0;
+        for (long t = T0 + 5_000; t <= T0 + 8 * 60_000L + 30_000; t += 250) {
+            int next = published + 1;
+            long lastUpdated = T0 + next * 60_000L;
+            if (t >= lastUpdated + (next == 1 ? 18_000 : 8_000)) {
+                http.put(PAGE0, TestData.auctionPage(0, 1, lastUpdated,
+                    hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+                published = next;
+            }
+            if (t == T0 + 7 * 60_000L + 30_000) {
+                requestsBefore = http.count(PAGE0);
+            }
+            clock.set(t);
+            engine.tick();
+        }
+        assertEquals(8, published);
+        long delay = engine.status.publishDelay;
+        assertTrue(delay >= 5_000 && delay <= 9_000, "learned " + delay);
+        // In the last minute only a handful of checks were needed.
+        assertTrue(http.count(PAGE0) - requestsBefore <= 6, "checks " + (http.count(PAGE0) - requestsBefore));
+    }
+
+    @Test
     void nextUpdateTiming() {
         long now = 10_000_000L;
         assertEquals(now + 500, Engine.expectedNextUpdate(now - 120_000, 0, now));
