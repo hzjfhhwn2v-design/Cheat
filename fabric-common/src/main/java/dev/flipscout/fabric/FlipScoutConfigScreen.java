@@ -24,7 +24,6 @@ final class FlipScoutConfigScreen extends Screen {
     private static final int TEXT_COLOR = 0xFFE0E0E0;
     private static final int ERROR_COLOR = 0xFFFF5555;
 
-    private final Screen parent;
     private final ConfigEditor editor;
     private Config.Section section;
     private String query = "";
@@ -33,9 +32,8 @@ final class FlipScoutConfigScreen extends Screen {
     private EditBox search;
     private StringWidget problem;
 
-    FlipScoutConfigScreen(Screen parent, ConfigEditor editor) {
+    FlipScoutConfigScreen(ConfigEditor editor) {
         super(Component.literal("FlipScout - Impostazioni"));
-        this.parent = parent;
         this.editor = editor;
         this.section = editor.sections().get(0);
     }
@@ -191,11 +189,6 @@ final class FlipScoutConfigScreen extends Screen {
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    @Override
-    public void onClose() {
-        minecraft.setScreen(parent);
     }
 
     @Override

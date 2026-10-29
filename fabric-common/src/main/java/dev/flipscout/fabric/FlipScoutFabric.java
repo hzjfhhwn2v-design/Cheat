@@ -46,7 +46,7 @@ public final class FlipScoutFabric implements ClientModInitializer {
             }
             // Opened a tick after the command, once the chat screen has closed.
             if (platform.takeConfigScreenRequest()) {
-                client.setScreen(new FlipScoutConfigScreen(client.screen, flipScout.editor()));
+                Screens.open(new FlipScoutConfigScreen(flipScout.editor()));
             }
         });
         // Server messages (purchases, sales); the action bar ("overlay") never has any.

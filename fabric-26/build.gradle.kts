@@ -1,5 +1,3 @@
-import java.net.URLClassLoader
-
 plugins {
     // 26.x ships unobfuscated: no mappings and no remapping step.
     id("net.fabricmc.fabric-loom") version "1.19-SNAPSHOT"
@@ -27,6 +25,8 @@ dependencies {
 sourceSets.main {
     // Shared Fabric adapter and platform-independent core; src/ only holds what differs on 26.x.
     java.srcDir("../fabric-common/src/main/java")
+    // Opening a screen changed name in 26.2.
+    java.srcDir(if (minecraftVersion.startsWith("26.1")) "src/screens-26.1/java" else "src/screens-26.2/java")
     resources.srcDir("../fabric-common/src/main/resources")
     java.srcDir("../core/src/main/java")
     resources.srcDir("../core/src/main/resources")
@@ -47,18 +47,3 @@ tasks.processResources {
     }
 }
 
-// Temporary: lists the screen API of this Minecraft version, to port the settings screen.
-tasks.register("printScreenApi") {
-    val classpath = sourceSets.main.get().compileClasspath
-    doLast {
-        val loader = URLClassLoader(classpath.files.map { it.toURI().toURL() }.toTypedArray(), null)
-        for (name in listOf("net.minecraft.client.Minecraft", "net.minecraft.client.gui.screens.Screen")) {
-            val type = Class.forName(name, false, loader)
-            println("== $name")
-            (type.declaredMethods.map { it.toString() } + type.declaredFields.map { it.toString() })
-                .filter { it.contains("Screen") || it.contains("screen") || it.contains("close", ignoreCase = true) }
-                .sorted()
-                .forEach { println(it) }
-        }
-    }
-}
