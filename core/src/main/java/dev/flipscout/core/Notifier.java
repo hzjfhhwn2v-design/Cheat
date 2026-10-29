@@ -19,6 +19,10 @@ final class Notifier {
             .append(" §8| §2+").append(Coins.compact(flip.profit))
             .append(" §7(").append(Coins.decimal(flip.percent, 1)).append("%)")
             .append(" §8| §7").append(volume(flip.valuation.volumePerDay));
+        if (l.start > 0) {
+            // How long ago it was listed, so you can tell how fresh the flip is.
+            line.append(" §8| §7").append(Text.shortDuration(now - l.start));
+        }
         if (flip.weak) {
             line.append(" §c⚠");
         }

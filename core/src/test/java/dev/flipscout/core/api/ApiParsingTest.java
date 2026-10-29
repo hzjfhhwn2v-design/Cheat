@@ -43,6 +43,37 @@ class ApiParsingTest {
     }
 
     @Test
+    void unchangedResponsesStopAfterLastUpdated() throws IOException {
+        String bytes = TestData.plainItem("HYPERION");
+        FakeFetcher http = new FakeFetcher()
+            .put(H + "/v2/skyblock/auctions?page=0", TestData.auctionPage(0, 3, 1234L,
+                TestData.auction("u1", "s", "Hyperion", "LEGENDARY", 1L, true, 1000L, bytes)))
+            .put(H + "/v2/skyblock/auctions_ended", TestData.endedPage(555L,
+                TestData.ended("e1", 10L, true, 500L, bytes)))
+            .put(H + "/v2/skyblock/bazaar", TestData.bazaar(42L,
+                TestData.product("X", new double[][] {{2, 1}}, new double[][] {{1, 1}}, 1, 1)));
+        HypixelApi api = new HypixelApi(http, () -> H);
+
+        AuctionPage same = api.fetchAuctionPage(0, 1234L);
+        assertTrue(same.notModified);
+        assertEquals(1234L, same.lastUpdated);
+        assertEquals(3, same.totalPages);
+        assertTrue(same.auctions.isEmpty());
+        AuctionPage changed = api.fetchAuctionPage(0, 1000L);
+        assertFalse(changed.notModified);
+        assertEquals(1, changed.auctions.size());
+
+        assertTrue(api.fetchEnded(555L).notModified);
+        assertEquals(1, api.fetchEnded(554L).auctions.size());
+
+        BazaarSnapshot bazaar = api.fetchBazaar(42L);
+        assertTrue(bazaar.notModified);
+        assertTrue(bazaar.products.isEmpty());
+        assertEquals(1, api.fetchBazaar(41L).products.size());
+        assertEquals(3, http.aborts.get());
+    }
+
+    @Test
     void errorsBecomeApiExceptions() {
         FakeFetcher http = new FakeFetcher()
             .put(H + "/v2/skyblock/auctions?page=0", "{\"success\":false,\"cause\":\"Page not found\"}")

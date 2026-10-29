@@ -97,6 +97,8 @@ public final class SalesHistory {
     }
 
     private final Map<String, Ring> byKey = new HashMap<String, Ring>();
+    /** Held while writing the file, so two saves never write it at the same time. */
+    private final Object fileLock = new Object();
     private final ArrayDeque<Integer> observed = new ArrayDeque<Integer>();
     private int totalSales;
     private boolean dirty;
@@ -210,10 +212,56 @@ public final class SalesHistory {
         }
     }
 
-    public synchronized void save(File file) throws IOException {
-        if (!dirty && file.isFile()) {
-            return;
+    /** Writes the history to disk; the data lock is only held while copying, not while writing. */
+    public void save(File file) throws IOException {
+        synchronized (fileLock) {
+            saveLocked(file);
         }
+    }
+
+    private void saveLocked(File file) throws IOException {
+        int[] observedCopy;
+        String[] keys;
+        int[][] minutes;
+        double[][] prices;
+        synchronized (this) {
+            if (!dirty && file.isFile()) {
+                return;
+            }
+            observedCopy = new int[observed.size()];
+            int o = 0;
+            for (Integer minute : observed) {
+                observedCopy[o++] = minute;
+            }
+            keys = new String[byKey.size()];
+            minutes = new int[keys.length][];
+            prices = new double[keys.length][];
+            int k = 0;
+            for (Map.Entry<String, Ring> entry : byKey.entrySet()) {
+                Ring ring = entry.getValue();
+                keys[k] = entry.getKey();
+                minutes[k] = new int[ring.size];
+                prices[k] = new double[ring.size];
+                for (int i = 0; i < ring.size; i++) {
+                    minutes[k][i] = ring.minuteAt(i);
+                    prices[k][i] = ring.priceAt(i);
+                }
+                k++;
+            }
+            dirty = false;
+        }
+        try {
+            write(file, observedCopy, keys, minutes, prices);
+        } catch (IOException e) {
+            synchronized (this) {
+                dirty = true;
+            }
+            throw e;
+        }
+    }
+
+    private static void write(File file, int[] observed, String[] keys, int[][] minutes, double[][] prices)
+        throws IOException {
         File parent = file.getAbsoluteFile().getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             throw new IOException("Impossibile creare " + parent);
@@ -223,25 +271,23 @@ public final class SalesHistory {
         try {
             out.writeInt(MAGIC);
             out.writeInt(VERSION);
-            out.writeInt(observed.size());
-            for (Integer minute : observed) {
+            out.writeInt(observed.length);
+            for (int minute : observed) {
                 out.writeInt(minute);
             }
-            out.writeInt(byKey.size());
-            for (Map.Entry<String, Ring> entry : byKey.entrySet()) {
-                Ring ring = entry.getValue();
-                out.writeUTF(entry.getKey());
-                out.writeInt(ring.size);
-                for (int i = 0; i < ring.size; i++) {
-                    out.writeInt(ring.minuteAt(i));
-                    out.writeDouble(ring.priceAt(i));
+            out.writeInt(keys.length);
+            for (int k = 0; k < keys.length; k++) {
+                out.writeUTF(keys[k]);
+                out.writeInt(minutes[k].length);
+                for (int i = 0; i < minutes[k].length; i++) {
+                    out.writeInt(minutes[k][i]);
+                    out.writeDouble(prices[k][i]);
                 }
             }
         } finally {
             out.close();
         }
         Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        dirty = false;
     }
 
     public synchronized void load(File file) {

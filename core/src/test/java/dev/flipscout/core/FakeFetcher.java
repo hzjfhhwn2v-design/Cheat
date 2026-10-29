@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Serves canned responses by URL; anything else is a 404. */
 public final class FakeFetcher implements HttpFetcher {
@@ -24,6 +25,14 @@ public final class FakeFetcher implements HttpFetcher {
     private final Map<String, Route> routes = new HashMap<String, Route>();
     public final List<String> requests = new ArrayList<String>();
     public long serverDate;
+    /** Responses dropped before the end of the body. */
+    public final AtomicInteger aborts = new AtomicInteger();
+    private final Runnable abort = new Runnable() {
+        @Override
+        public void run() {
+            aborts.incrementAndGet();
+        }
+    };
 
     public FakeFetcher put(String url, String body) {
         routes.put(url, new Route(200, body));
@@ -35,7 +44,7 @@ public final class FakeFetcher implements HttpFetcher {
         return this;
     }
 
-    public int count(String url) {
+    public synchronized int count(String url) {
         int n = 0;
         for (String request : requests) {
             if (request.equals(url)) {
@@ -54,6 +63,6 @@ public final class FakeFetcher implements HttpFetcher {
                 .getBytes(StandardCharsets.UTF_8)), serverDate, 0);
         }
         return new Response(route.status, new ByteArrayInputStream(route.body.getBytes(StandardCharsets.UTF_8)),
-            serverDate, 0);
+            serverDate, 0, abort);
     }
 }

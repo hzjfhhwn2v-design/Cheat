@@ -16,16 +16,43 @@ public interface HttpFetcher {
         public final long serverDate;
         /** Retry-After in milliseconds, or 0 when missing. */
         public final long retryAfterMs;
+        private final Runnable disconnect;
+        private boolean closed;
 
         public Response(int status, InputStream body, long serverDate, long retryAfterMs) {
+            this(status, body, serverDate, retryAfterMs, null);
+        }
+
+        public Response(int status, InputStream body, long serverDate, long retryAfterMs, Runnable disconnect) {
             this.status = status;
             this.body = body;
             this.serverDate = serverDate;
             this.retryAfterMs = retryAfterMs;
+            this.disconnect = disconnect;
+        }
+
+        /** Stops early: drops the connection instead of downloading the rest of the body. */
+        public void abort() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (disconnect != null) {
+                disconnect.run();
+            }
+            try {
+                body.close();
+            } catch (IOException ignored) {
+                // the connection is gone anyway
+            }
         }
 
         @Override
         public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
             body.close();
         }
     }

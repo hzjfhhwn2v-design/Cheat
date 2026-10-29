@@ -111,6 +111,18 @@ public final class Text {
         return Coins.decimal(hours / 24.0, 1) + " g";
     }
 
+    /** Compact age for chat lines: "12s", "4m", "3h". */
+    public static String shortDuration(long ms) {
+        long s = Math.max(0, ms) / 1000;
+        if (s < 60) {
+            return s + "s";
+        }
+        if (s < 3600) {
+            return (s / 60) + "m";
+        }
+        return (s / 3600) + "h";
+    }
+
     /** Time since {@code timestamp}, or "mai" (never) when it is 0. */
     public static String ago(long now, long timestamp) {
         return timestamp <= 0 ? "mai" : duration(now - timestamp) + " fa";

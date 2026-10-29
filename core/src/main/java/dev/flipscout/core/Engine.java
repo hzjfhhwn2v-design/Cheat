@@ -35,23 +35,27 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
 
 /**
- * Polls the data sources on a background thread and turns new data into notifications.
- * All mutable state below is only touched by the engine thread unless noted otherwise.
+ * Polls the data sources and turns new data into notifications.
+ *
+ * <p>The engine thread only does what sits on the path to an auction notification: checking
+ * for the minute's new auctions and merging pages. Full scans, sold auctions, the bazaar,
+ * reference data, saving and Coflnet confirmations run on background threads, so they never
+ * hold a notification back.
  */
 public final class Engine {
     private static final long MINUTE = 60_000L;
@@ -61,6 +65,11 @@ public final class Engine {
     private static final int MAX_RECENT = 30;
     /** Extra auction pages read per poll while they still contain new auctions. */
     private static final int EXTRA_POLL_PAGES = 3;
+    /** How often the engine thread wakes up, i.e. the most a due poll can be late. */
+    private static final long TICK_MS = 250L;
+    /** A full scan whose pages have not all arrived by then is closed as incomplete. */
+    private static final long SCAN_TIMEOUT_MS = 3 * MINUTE;
+    private static final int MAX_PENDING_CONFIRMATIONS = 4;
 
     /** A notification kept for /flipscout recent and /flipscout open. */
     public static final class Notification {
@@ -90,6 +99,29 @@ public final class Engine {
         }
     }
 
+    /** A download of the whole auction house; pages are merged as they arrive. */
+    private static final class FullScan {
+        final long id;
+        final long startedAt;
+        final int pages;
+        /** lastUpdated of page 0: pages from another refresh may have shifted. */
+        final long lastUpdated;
+        final Queue<AuctionPage> fetched = new ConcurrentLinkedQueue<AuctionPage>();
+        final AtomicInteger pending;
+        volatile boolean failed;
+        boolean mixed;
+        int mergedPages;
+        int auctions;
+
+        FullScan(long id, long startedAt, AuctionPage first) {
+            this.id = id;
+            this.startedAt = startedAt;
+            this.pages = Math.max(1, first.totalPages);
+            this.lastUpdated = first.lastUpdated;
+            this.pending = new AtomicInteger(pages - 1);
+        }
+    }
+
     private final Config config;
     private final Platform platform;
     private final LongSupplier clock;
@@ -108,35 +140,46 @@ public final class Engine {
     private final Notifier notifier = new Notifier();
 
     private final Map<String, ItemKey> canonicalKeys = new ConcurrentHashMap<String, ItemKey>();
-    private final Set<String> evaluated = boundedSet(50_000);
-    private final Map<String, Long> cooldowns = new HashMap<String, Long>();
     /** Guarded by itself: read by commands on other threads. */
     private final Deque<Notification> recent = new ArrayDeque<Notification>();
 
     private volatile ItemCatalog items = ItemCatalog.EMPTY;
     private volatile boolean initialScanDone;
-    private volatile ScheduledExecutorService scheduler;
-    private volatile ExecutorService workers;
     /** Local clock minus Hypixel's, from the Date header of the last auction page. */
     private volatile long clockSkew;
+    private volatile ScheduledExecutorService scheduler;
+    private volatile ExecutorService scanPool;
+    private volatile ExecutorService backgroundPool;
 
-    private boolean salesLoaded;
+    // Engine thread only.
+    private final Set<String> evaluated = boundedSet(50_000);
+    private volatile boolean salesLoaded;
     private long scanSeq;
+    private FullScan scan;
     private long nextFullScan;
     private long nextAuctionPoll;
-    private long nextEndedPoll;
-    private long nextBazaarPoll;
-    private long nextNeuLowestBins;
-    private long nextNeuAverages;
-    private long nextItems;
-    private long nextSave;
     private long nextExpire;
+    private long nextSave;
     private long lastAuctionsUpdate;
-    private long lastEndedUpdate;
-    private long lastBazaarUpdate;
     private int auctionStale;
-    private int endedStale;
     private final Backoff auctionBackoff = new Backoff();
+
+    // Background jobs: each kind runs one at a time (see background()), so their own state needs
+    // no locking; the due times are volatile because the engine thread reads them.
+    private final AtomicBoolean referenceJob = new AtomicBoolean();
+    private final AtomicBoolean endedJob = new AtomicBoolean();
+    private final AtomicBoolean bazaarJob = new AtomicBoolean();
+    private final AtomicBoolean saveJob = new AtomicBoolean();
+    private final AtomicInteger pendingConfirmations = new AtomicInteger();
+    private volatile long nextItems;
+    private volatile long nextNeuLowestBins;
+    private volatile long nextNeuAverages;
+    private volatile long nextEndedPoll;
+    private volatile long nextBazaarPoll;
+    private long lastEndedUpdate;
+    private int endedStale;
+    private long lastBazaarUpdate;
+    private final Map<String, Long> cooldowns = new HashMap<String, Long>();
     private final Backoff endedBackoff = new Backoff();
     private final Backoff bazaarBackoff = new Backoff();
     private final Backoff neuBackoff = new Backoff();
@@ -159,27 +202,34 @@ public final class Engine {
         if (scheduler != null) {
             return;
         }
-        workers = Executors.newFixedThreadPool(4, threads("FlipScout-download"));
+        scanPool = Executors.newFixedThreadPool(4, threads("FlipScout-scan"));
+        backgroundPool = Executors.newFixedThreadPool(3, threads("FlipScout-background"));
         ScheduledExecutorService s = Executors.newSingleThreadScheduledExecutor(threads("FlipScout"));
-        s.scheduleWithFixedDelay(this::tickSafely, 1, 1, TimeUnit.SECONDS);
+        s.scheduleWithFixedDelay(this::tickSafely, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
         scheduler = s;
     }
 
     public void stop() {
         ScheduledExecutorService s;
-        ExecutorService w;
+        ExecutorService scans;
+        ExecutorService background;
         synchronized (this) {
             s = scheduler;
-            w = workers;
+            scans = scanPool;
+            background = backgroundPool;
             scheduler = null;
-            workers = null;
+            scanPool = null;
+            backgroundPool = null;
         }
         if (s == null) {
             return;
         }
         s.shutdownNow();
-        if (w != null) {
-            w.shutdownNow();
+        if (scans != null) {
+            scans.shutdownNow();
+        }
+        if (background != null) {
+            background.shutdownNow();
         }
         try {
             s.awaitTermination(5, TimeUnit.SECONDS);
@@ -187,21 +237,56 @@ public final class Engine {
             Thread.currentThread().interrupt();
         }
         if (salesLoaded) {
-            saveSales(clock.getAsLong());
+            saveSales();
         }
     }
 
-    /** Runs a slow query off the client thread (inline when the engine is not running). */
+    /** Tests run everything inline by default; this lets them supply their own executors. */
+    void useExecutors(ExecutorService scans, ExecutorService background) {
+        scanPool = scans;
+        backgroundPool = background;
+    }
+
+    /** Runs a slow task off the calling thread (inline when the engine is not running). */
     public void runAsync(Runnable task) {
-        ExecutorService w = workers;
-        if (w == null) {
+        ExecutorService pool = backgroundPool;
+        if (pool == null) {
             task.run();
             return;
         }
         try {
-            w.execute(task);
-        } catch (RuntimeException e) {
+            pool.execute(task);
+        } catch (RejectedExecutionException e) {
             task.run();
+        }
+    }
+
+    /** Runs {@code job} in the background unless the same kind of job is still running. */
+    private void background(final AtomicBoolean running, final Runnable job) {
+        if (!running.compareAndSet(false, true)) {
+            return;
+        }
+        Runnable wrapped = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    job.run();
+                } catch (Throwable t) {
+                    Log.error("Errore inatteso in un lavoro in background", t);
+                } finally {
+                    running.set(false);
+                }
+            }
+        };
+        ExecutorService pool = backgroundPool;
+        if (pool == null) {
+            wrapped.run();
+            return;
+        }
+        try {
+            pool.execute(wrapped);
+        } catch (RejectedExecutionException e) {
+            running.set(false);
         }
     }
 
@@ -224,31 +309,25 @@ public final class Engine {
             return;
         }
         long now = clock.getAsLong();
-        if (now >= nextItems) {
-            refreshItems(now);
-        }
-        if (config.sourceNeu) {
-            now = clock.getAsLong();
-            if (now >= nextNeuLowestBins) {
-                refreshNeuLowestBins(now);
-            }
-            now = clock.getAsLong();
-            if (now >= nextNeuAverages) {
-                refreshNeuAverages(now);
-            }
+        if (now >= nextItems || (config.sourceNeu && (now >= nextNeuLowestBins || now >= nextNeuAverages))) {
+            background(referenceJob, this::refreshReferenceData);
         }
         if (config.ahEnabled) {
             now = clock.getAsLong();
-            if (now >= nextFullScan) {
-                fullScan(now);
-            } else if (now >= nextAuctionPoll) {
+            if (scan == null && now >= nextFullScan) {
+                startFullScan(now);
+            }
+            if (scan != null) {
+                drainFullScan(clock.getAsLong());
+            }
+            now = clock.getAsLong();
+            if (now >= nextAuctionPoll) {
                 pollAuctions(now);
             }
             now = clock.getAsLong();
             if (now >= nextEndedPoll) {
-                pollEnded(now);
+                background(endedJob, this::pollEnded);
             }
-            now = clock.getAsLong();
             if (now >= nextExpire) {
                 index.removeExpired(now - clockSkew);
                 nextExpire = now + 30_000L;
@@ -256,84 +335,117 @@ public final class Engine {
         }
         now = clock.getAsLong();
         if (config.bzEnabled && now >= nextBazaarPoll) {
-            pollBazaar(now);
+            background(bazaarJob, this::pollBazaar);
         }
-        now = clock.getAsLong();
         if (now >= nextSave) {
-            saveSales(now);
             nextSave = now + 5 * MINUTE;
+            background(saveJob, this::saveSales);
         }
     }
 
-    // ---- Auctions ----
+    // ---- Auctions (engine thread) ----
 
-    private void fullScan(long startedAt) {
-        long scan = ++scanSeq;
-        status.scanning = true;
+    private void startFullScan(long now) {
+        AuctionPage first;
         try {
-            AuctionPage first = hypixel.fetchAuctionPage(0);
-            noteServerTime(first);
-            int pages = Math.max(1, first.totalPages);
-            ExecutorService pool = workers;
-            List<Future<AuctionPage>> futures = new ArrayList<Future<AuctionPage>>();
-            if (pool != null) {
-                for (int p = 1; p < pages; p++) {
-                    final int page = p;
-                    futures.add(pool.submit(new Callable<AuctionPage>() {
-                        @Override
-                        public AuctionPage call() throws IOException {
-                            return decodeAll(hypixel.fetchAuctionPage(page));
-                        }
-                    }));
-                }
-            }
-            int auctions = merge(decodeAll(first), scan, clock.getAsLong());
-            boolean complete = true;
-            if (pool == null) {
-                for (int p = 1; p < pages; p++) {
-                    auctions += merge(decodeAll(hypixel.fetchAuctionPage(p)), scan, clock.getAsLong());
-                }
-            } else {
-                for (Future<AuctionPage> future : futures) {
-                    try {
-                        auctions += merge(future.get(2, TimeUnit.MINUTES), scan, clock.getAsLong());
-                    } catch (ExecutionException e) {
-                        complete = false;
-                        Log.warn("Pagina di aste non scaricata: " + e.getCause());
-                    } catch (TimeoutException e) {
-                        complete = false;
-                        future.cancel(true);
-                        Log.warn("Pagina di aste troppo lenta, la salto");
-                    }
-                }
-            }
-            if (complete) {
-                // Only a complete scan can tell which auctions disappeared (sold or cancelled).
-                index.removeUnseen(scan, startedAt);
-            }
-            long end = clock.getAsLong();
-            status.lastFullScan = end;
-            status.fullScanPages = pages;
-            status.fullScanAuctions = auctions;
-            status.fullScanMillis = end - startedAt;
-            status.ok("aste");
-            auctionBackoff.reset();
-            initialScanDone = true;
-            nextFullScan = end + config.ahFullScanMinutes * MINUTE;
-            if (first.lastUpdated > lastAuctionsUpdate) {
-                lastAuctionsUpdate = first.lastUpdated;
-            }
-            nextAuctionPoll = expectedNextUpdate(first.lastUpdated, first.serverDate, end);
-            Log.debug("Scansione completa: " + auctions + " aste in " + pages + " pagine, " + index.size() + " BIN indicizzate");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            first = hypixel.fetchAuctionPage(0, 0);
         } catch (IOException e) {
             failAuctions(e);
+            return;
         } catch (RuntimeException e) {
             failAuctions(e);
-        } finally {
-            status.scanning = false;
+            return;
         }
+        noteServerTime(first);
+        final FullScan s = new FullScan(++scanSeq, now, first);
+        scan = s;
+        status.scanning = true;
+        // Page 0 holds the newest auctions: merge it now rather than after the whole scan.
+        s.auctions += merge(decodeAll(first), s.id, clock.getAsLong());
+        s.mergedPages++;
+        if (first.lastUpdated > lastAuctionsUpdate) {
+            lastAuctionsUpdate = first.lastUpdated;
+        }
+        nextAuctionPoll = expectedNextUpdate(first.lastUpdated, first.serverDate, clock.getAsLong());
+        ExecutorService pool = scanPool;
+        for (int p = 1; p < s.pages; p++) {
+            final int page = p;
+            Runnable task = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        s.fetched.add(decodeAll(hypixel.fetchAuctionPage(page, 0)));
+                    } catch (IOException e) {
+                        s.failed = true;
+                        Log.debug("Pagina " + page + " non scaricata: " + e);
+                    } catch (RuntimeException e) {
+                        s.failed = true;
+                        Log.debug("Pagina " + page + " non leggibile: " + e);
+                    } finally {
+                        s.pending.decrementAndGet();
+                    }
+                }
+            };
+            if (pool == null) {
+                task.run();
+                continue;
+            }
+            try {
+                pool.execute(task);
+            } catch (RejectedExecutionException e) {
+                s.failed = true;
+                s.pending.decrementAndGet();
+            }
+        }
+    }
+
+    private void drainFullScan(long now) {
+        FullScan s = scan;
+        AuctionPage page;
+        while ((page = s.fetched.poll()) != null) {
+            if (page.lastUpdated != s.lastUpdated) {
+                // Hypixel refreshed mid-scan, so some auctions may have moved to pages already read.
+                s.mixed = true;
+            }
+            s.auctions += merge(page, s.id, clock.getAsLong());
+            s.mergedPages++;
+        }
+        boolean timedOut = now - s.startedAt > SCAN_TIMEOUT_MS;
+        if (!timedOut && (s.pending.get() > 0 || !s.fetched.isEmpty())) {
+            return;
+        }
+        scan = null;
+        status.scanning = false;
+        boolean complete = !s.failed && !timedOut && s.mergedPages == s.pages;
+        if (complete && !s.mixed) {
+            // Only a complete scan of one refresh can tell which auctions disappeared (sold or
+            // cancelled): with a refresh in between, an auction may have slipped past us.
+            index.removeUnseen(s.id, s.startedAt);
+        }
+        long end = clock.getAsLong();
+        status.lastFullScan = end;
+        status.fullScanPages = s.pages;
+        status.fullScanAuctions = s.auctions;
+        status.fullScanMillis = end - s.startedAt;
+        // With pages missing some cheaper listings may be unknown, which would make flips look
+        // better than they are: notify only once at least nine pages out of ten are in.
+        if (complete || s.mergedPages * 10 >= s.pages * 9) {
+            initialScanDone = true;
+        }
+        if (complete && !s.mixed) {
+            status.ok("aste");
+            auctionBackoff.reset();
+            nextFullScan = end + config.ahFullScanMinutes * MINUTE;
+        } else {
+            if (complete) {
+                Log.debug("Le aste sono cambiate durante la scansione completa, la ripeto tra poco");
+            } else {
+                Log.warn("Scansione completa incompleta: " + s.mergedPages + "/" + s.pages + " pagine");
+            }
+            nextFullScan = end + 2 * MINUTE;
+        }
+        Log.debug("Scansione completa: " + s.auctions + " aste in " + s.pages + " pagine, " + index.size()
+            + " BIN indicizzate");
     }
 
     private void failAuctions(Exception e) {
@@ -344,10 +456,10 @@ public final class Engine {
 
     private void pollAuctions(long now) {
         try {
-            AuctionPage first = hypixel.fetchAuctionPage(0);
+            AuctionPage first = hypixel.fetchAuctionPage(0, lastAuctionsUpdate);
             noteServerTime(first);
             status.lastAuctionPoll = now;
-            if (first.lastUpdated != 0 && first.lastUpdated <= lastAuctionsUpdate) {
+            if (first.notModified || (first.lastUpdated != 0 && first.lastUpdated <= lastAuctionsUpdate)) {
                 auctionStale++;
                 nextAuctionPoll = now + staleDelay(auctionStale);
                 return;
@@ -362,7 +474,7 @@ public final class Engine {
             int max = Math.min(pages, config.ahPollPages + EXTRA_POLL_PAGES);
             // New auctions sit on the first pages; keep reading while a page still has some.
             for (int p = 1; p < max && (p < required || recent > 0); p++) {
-                AuctionPage page = decodeAll(hypixel.fetchAuctionPage(p));
+                AuctionPage page = decodeAll(hypixel.fetchAuctionPage(p, 0));
                 merge(page, scanSeq, clock.getAsLong());
                 recent = countStartedSince(page, recentSince);
             }
@@ -378,7 +490,7 @@ public final class Engine {
         }
     }
 
-    /** Decodes item bytes of BIN auctions we do not know yet (runs on download threads too). */
+    /** Decodes item bytes of BIN auctions we do not know yet (runs on scan threads too). */
     private AuctionPage decodeAll(AuctionPage page) {
         for (Auction auction : page.auctions) {
             if (!auction.bin || auction.decoded != null || index.contains(auction.uuid)) {
@@ -413,13 +525,13 @@ public final class Engine {
                 decoded.count, auction.start, auction.end, now, scan);
             index.add(listing);
             if (initialScanDone && now - clockSkew - auction.start < FRESH_MS) {
-                consider(listing, now);
+                consider(listing);
             }
         }
         return page.auctions.size();
     }
 
-    private void consider(AuctionIndex.Listing listing, long now) {
+    private void consider(final AuctionIndex.Listing listing) {
         if (!evaluated.add(listing.uuid)) {
             return;
         }
@@ -427,19 +539,88 @@ public final class Engine {
         if (me != null && me.equals(listing.seller)) {
             return;
         }
-        AuctionFlip flip = auctionFinder.evaluate(listing, true);
-        if (flip == null) {
-            return;
+        AuctionFlip flip = auctionFinder.evaluate(listing, false);
+        // A flip backed by two prices goes out at once. One resting on a single price, or not a
+        // flip on local data alone, is first checked against Coflnet when that could add the
+        // missing sales data: in the background, so the round trip never delays anything else.
+        if ((flip == null || flip.weak) && pendingConfirmations.get() < MAX_PENDING_CONFIRMATIONS
+            && auctionFinder.worthConfirming(listing)) {
+            confirm(listing);
+        } else if (flip != null) {
+            notifyAuction(flip);
         }
-        status.auctionNotifications++;
-        deliver(notifier.auction(flip, now - clockSkew), true, now);
     }
 
-    private void pollEnded(long now) {
+    private void confirm(final AuctionIndex.Listing listing) {
+        pendingConfirmations.incrementAndGet();
+        runAsync(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    AuctionFlip flip = auctionFinder.evaluate(listing, true);
+                    if (flip != null) {
+                        notifyAuction(flip);
+                    }
+                } finally {
+                    pendingConfirmations.decrementAndGet();
+                }
+            }
+        });
+    }
+
+    private void notifyAuction(AuctionFlip flip) {
+        status.auctionNotifications.incrementAndGet();
+        deliver(notifier.auction(flip, serverTime()), true, clock.getAsLong());
+    }
+
+    /**
+     * Both auction endpoints refresh once a minute: start asking a little before the next
+     * refresh (a "not yet" costs only the first bytes of the page), correcting for the
+     * difference between our clock and Hypixel's.
+     */
+    static long expectedNextUpdate(long lastUpdated, long serverDate, long now) {
+        if (lastUpdated <= 0) {
+            return now + MINUTE;
+        }
+        long skew = serverDate > 0 ? now - serverDate : 0;
+        long next = lastUpdated + MINUTE + skew - 1_000L;
+        return Math.max(now + 500L, Math.min(next, now + 70_000L));
+    }
+
+    /** Retry fast right around the expected refresh, slower if Hypixel is late. */
+    private static long staleDelay(int attempts) {
+        return attempts < 40 ? 500L : attempts < 100 ? 2_000L : 10_000L;
+    }
+
+    private void noteServerTime(AuctionPage page) {
+        if (page.serverDate > 0) {
+            clockSkew = clock.getAsLong() - page.serverDate;
+        }
+    }
+
+    private static int countStartedSince(AuctionPage page, long since) {
+        int count = 0;
+        for (Auction auction : page.auctions) {
+            if (auction.start >= since) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Current time on Hypixel's clock (auction timestamps use it). */
+    public long serverTime() {
+        return clock.getAsLong() - clockSkew;
+    }
+
+    // ---- Sold auctions (background) ----
+
+    private void pollEnded() {
+        long now = clock.getAsLong();
         try {
-            EndedPage page = hypixel.fetchEnded();
+            EndedPage page = hypixel.fetchEnded(lastEndedUpdate);
             status.lastEndedPoll = now;
-            if (page.lastUpdated != 0 && page.lastUpdated <= lastEndedUpdate) {
+            if (page.notModified || (page.lastUpdated != 0 && page.lastUpdated <= lastEndedUpdate)) {
                 endedStale++;
                 nextEndedPoll = now + staleDelay(endedStale);
                 return;
@@ -471,54 +652,17 @@ public final class Engine {
         }
     }
 
-    /**
-     * Both auction endpoints refresh once a minute: aim just after the next refresh, correcting
-     * for the difference between our clock and Hypixel's.
-     */
-    static long expectedNextUpdate(long lastUpdated, long serverDate, long now) {
-        if (lastUpdated <= 0) {
-            return now + MINUTE;
-        }
-        long skew = serverDate > 0 ? now - serverDate : 0;
-        long next = lastUpdated + MINUTE + skew + 2_000L;
-        return Math.max(now + 3_000L, Math.min(next, now + 70_000L));
-    }
+    // ---- Bazaar (background) ----
 
-    private static long staleDelay(int attempts) {
-        return attempts < 10 ? 3_000L : attempts < 30 ? 10_000L : 30_000L;
-    }
-
-    private void noteServerTime(AuctionPage page) {
-        if (page.serverDate > 0) {
-            clockSkew = clock.getAsLong() - page.serverDate;
-        }
-    }
-
-    private static int countStartedSince(AuctionPage page, long since) {
-        int count = 0;
-        for (Auction auction : page.auctions) {
-            if (auction.start >= since) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    /** Current time on Hypixel's clock (auction timestamps use it). */
-    public long serverTime() {
-        return clock.getAsLong() - clockSkew;
-    }
-
-    // ---- Bazaar ----
-
-    private void pollBazaar(long now) {
+    private void pollBazaar() {
+        long now = clock.getAsLong();
         try {
-            BazaarSnapshot snapshot = hypixel.fetchBazaar();
+            BazaarSnapshot snapshot = hypixel.fetchBazaar(lastBazaarUpdate);
             status.lastBazaarPoll = now;
             status.ok("bazaar");
             bazaarBackoff.reset();
             nextBazaarPoll = now + config.bzIntervalSeconds * 1000L;
-            if (snapshot.lastUpdated != 0 && snapshot.lastUpdated <= lastBazaarUpdate) {
+            if (snapshot.notModified || (snapshot.lastUpdated != 0 && snapshot.lastUpdated <= lastBazaarUpdate)) {
                 return;
             }
             lastBazaarUpdate = snapshot.lastUpdated;
@@ -551,7 +695,7 @@ public final class Engine {
                 continue;
             }
             shown++;
-            status.bazaarNotifications++;
+            status.bazaarNotifications.incrementAndGet();
             deliver(notifier.bazaar(flip), false, now);
         }
         if (cooldowns.size() > 10_000) {
@@ -575,7 +719,21 @@ public final class Engine {
         }
     }
 
-    // ---- Reference data ----
+    // ---- Reference data and saving (background) ----
+
+    private void refreshReferenceData() {
+        if (clock.getAsLong() >= nextItems) {
+            refreshItems(clock.getAsLong());
+        }
+        if (config.sourceNeu) {
+            if (clock.getAsLong() >= nextNeuLowestBins) {
+                refreshNeuLowestBins(clock.getAsLong());
+            }
+            if (clock.getAsLong() >= nextNeuAverages) {
+                refreshNeuAverages(clock.getAsLong());
+            }
+        }
+    }
 
     private void refreshItems(long now) {
         try {
@@ -630,16 +788,16 @@ public final class Engine {
         nextNeuAverages = Math.max(nextNeuAverages, retry);
     }
 
-    private void saveSales(long now) {
+    private void saveSales() {
         try {
-            sales.prune((int) (now / MINUTE), config.salesWindowDays);
+            sales.prune((int) (clock.getAsLong() / MINUTE), config.salesWindowDays);
             sales.save(salesFile);
         } catch (IOException e) {
             Log.warn("Impossibile salvare le vendite", e);
         }
     }
 
-    // ---- Notifications ----
+    // ---- Notifications (any thread) ----
 
     private void deliver(Msg message, boolean auction, long now) {
         synchronized (recent) {

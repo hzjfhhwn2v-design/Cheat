@@ -26,6 +26,15 @@ public final class HypixelApi {
     }
 
     public AuctionPage fetchAuctionPage(int page) throws IOException {
+        return fetchAuctionPage(page, 0);
+    }
+
+    /**
+     * Downloads one auction page. When its lastUpdated equals {@code knownLastUpdated} the
+     * download stops right there (Hypixel sends lastUpdated before the auctions), so checking
+     * whether the minute's refresh has happened costs only the first few KB.
+     */
+    public AuctionPage fetchAuctionPage(int page, long knownLastUpdated) throws IOException {
         HttpFetcher.Response response = get("/v2/skyblock/auctions?page=" + page);
         try {
             JsonReader in = Json.reader(response.body);
@@ -55,6 +64,11 @@ public final class HypixelApi {
                         break;
                     case "lastUpdated":
                         result.lastUpdated = Json.readLong(in, 0);
+                        if (knownLastUpdated != 0 && result.lastUpdated == knownLastUpdated) {
+                            result.notModified = true;
+                            response.abort();
+                            return result;
+                        }
                         break;
                     case "auctions":
                         if (in.peek() != JsonToken.BEGIN_ARRAY) {
@@ -136,6 +150,11 @@ public final class HypixelApi {
     }
 
     public EndedPage fetchEnded() throws IOException {
+        return fetchEnded(0);
+    }
+
+    /** Recently sold auctions; stops early like {@link #fetchAuctionPage(int, long)}. */
+    public EndedPage fetchEnded(long knownLastUpdated) throws IOException {
         HttpFetcher.Response response = get("/v2/skyblock/auctions_ended");
         try {
             JsonReader in = Json.reader(response.body);
@@ -152,6 +171,11 @@ public final class HypixelApi {
                     cause = Json.readString(in);
                 } else if ("lastUpdated".equals(name)) {
                     result.lastUpdated = Json.readLong(in, 0);
+                    if (knownLastUpdated != 0 && result.lastUpdated == knownLastUpdated) {
+                        result.notModified = true;
+                        response.abort();
+                        return result;
+                    }
                 } else if ("auctions".equals(name) && in.peek() == JsonToken.BEGIN_ARRAY) {
                     in.beginArray();
                     while (in.hasNext()) {
@@ -233,6 +257,11 @@ public final class HypixelApi {
     }
 
     public BazaarSnapshot fetchBazaar() throws IOException {
+        return fetchBazaar(0);
+    }
+
+    /** The bazaar; stops early like {@link #fetchAuctionPage(int, long)}. */
+    public BazaarSnapshot fetchBazaar(long knownLastUpdated) throws IOException {
         HttpFetcher.Response response = get("/v2/skyblock/bazaar");
         try {
             JsonReader in = Json.reader(response.body);
@@ -249,6 +278,10 @@ public final class HypixelApi {
                     cause = Json.readString(in);
                 } else if ("lastUpdated".equals(name)) {
                     lastUpdated = Json.readLong(in, 0);
+                    if (knownLastUpdated != 0 && lastUpdated == knownLastUpdated) {
+                        response.abort();
+                        return new BazaarSnapshot(lastUpdated, products, true);
+                    }
                 } else if ("products".equals(name) && in.peek() == JsonToken.BEGIN_OBJECT) {
                     in.beginObject();
                     while (in.hasNext()) {

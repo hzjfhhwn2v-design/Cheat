@@ -51,7 +51,7 @@ public final class Config {
 
     // Bazaar
     public volatile boolean bzEnabled = true;
-    public volatile int bzIntervalSeconds = 60;
+    public volatile int bzIntervalSeconds = 20;
     public volatile double bzTax = 1.25;
     public volatile int bzMaxPerCycle = 3;
     public volatile boolean bzFlipEnabled = true;

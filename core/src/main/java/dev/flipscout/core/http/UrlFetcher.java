@@ -12,6 +12,9 @@ import javax.net.ssl.SSLSocketFactory;
 
 /** {@link HttpFetcher} on top of HttpURLConnection (Java 8 has no java.net.http). */
 public final class UrlFetcher implements HttpFetcher {
+    /** Small enough that an aborted download stops after the first few KB. */
+    private static final int BUFFER = 16 * 1024;
+
     private final String userAgent;
     private final SSLSocketFactory socketFactory;
 
@@ -37,20 +40,21 @@ public final class UrlFetcher implements HttpFetcher {
             in = new ByteArrayInputStream(new byte[0]);
         }
         if ("gzip".equalsIgnoreCase(connection.getContentEncoding())) {
-            in = new GZIPInputStream(in, 65536);
+            in = new GZIPInputStream(in, BUFFER);
         }
-        return new Response(status, maybeGunzip(in), connection.getDate(), retryAfter(connection));
+        return new Response(status, maybeGunzip(in), connection.getDate(), retryAfter(connection),
+            connection::disconnect);
     }
 
     /** Some sources serve .json.gz files as plain binary: unwrap those too. */
     static InputStream maybeGunzip(InputStream in) throws IOException {
-        BufferedInputStream buffered = new BufferedInputStream(in, 65536);
+        BufferedInputStream buffered = new BufferedInputStream(in, BUFFER);
         buffered.mark(2);
         int b1 = buffered.read();
         int b2 = buffered.read();
         buffered.reset();
         if (b1 == 0x1f && b2 == 0x8b) {
-            return new BufferedInputStream(new GZIPInputStream(buffered, 65536), 65536);
+            return new BufferedInputStream(new GZIPInputStream(buffered, BUFFER), BUFFER);
         }
         return buffered;
     }

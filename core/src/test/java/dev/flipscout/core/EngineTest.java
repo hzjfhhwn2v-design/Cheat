@@ -236,11 +236,167 @@ class EngineTest {
     }
 
     @Test
+    void fullScanRunsInTheBackgroundWithoutHoldingUpPolls() {
+        ManualExecutor scans = new ManualExecutor();
+        engine.useExecutors(scans, null);
+        String page = H + "/v2/skyblock/auctions?page=";
+        http.put(PAGE0, TestData.auctionPage(0, 3, T0, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        http.put(page + 1, TestData.auctionPage(1, 3, T0, hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L)));
+        http.put(page + 2, TestData.auctionPage(2, 3, T0, hyperion("a3", "s3", 920_000_000L, T0 - 3_600_000L)));
+        String[] sold = new String[5];
+        for (int i = 0; i < sold.length; i++) {
+            sold[i] = TestData.ended("e" + i, 893_000_000L + i * 1_000_000L, true, T0 - 30_000, TestData.plainItem("HYPERION"));
+        }
+        http.put(ENDED, TestData.endedPage(T0, sold));
+
+        // Page 0 is merged at once, the other pages are left to the scan threads.
+        engine.tick();
+        assertEquals(1, engine.index.size());
+        assertEquals(2, scans.size());
+        assertFalse(engine.initialScanDone());
+        scans.runAll();
+        engine.tick();
+        assertTrue(engine.initialScanDone());
+        assertEquals(3, engine.index.size());
+
+        // The next full scan is still downloading when the minute's new auctions come out...
+        long t2 = T0 + 31 * 60_000L;
+        http.put(PAGE0, TestData.auctionPage(0, 3, t2, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        http.put(page + 1, TestData.auctionPage(1, 3, t2, hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L)));
+        http.put(page + 2, TestData.auctionPage(2, 3, t2, hyperion("a3", "s3", 920_000_000L, T0 - 3_600_000L)));
+        http.put(ENDED, TestData.endedPage(t2));
+        clock.set(t2 + 5_000);
+        engine.tick();
+        assertEquals(2, scans.size());
+        long t3 = t2 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 3, t3,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t3 - 10_000)));
+        clock.set(t3 + 1_000);
+        engine.tick();
+        // ...and they are notified without waiting for it.
+        assertEquals(1, platform.withCommand("/viewauction new").size());
+        assertTrue(engine.status.scanning);
+
+        scans.runAll();
+        engine.tick();
+        assertFalse(engine.status.scanning);
+        assertEquals(4, engine.index.size());
+        assertEquals(1, platform.withCommand("/viewauction new").size());
+    }
+
+    @Test
+    void refreshDuringAFullScanRemovesNothing() {
+        initialMarket();
+        ManualExecutor scans = new ManualExecutor();
+        engine.useExecutors(scans, null);
+        long t2 = T0 + 31 * 60_000L;
+        http.put(PAGE0, TestData.auctionPage(0, 2, t2, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        clock.set(t2 + 5_000);
+        engine.tick();
+        assertEquals(1, scans.size());
+        // Page 1 comes from the next refresh, where a2 has moved to page 0: it is seen nowhere.
+        http.put(H + "/v2/skyblock/auctions?page=1", TestData.auctionPage(1, 2, t2 + 60_000));
+        scans.runAll();
+        engine.tick();
+        assertFalse(engine.status.scanning);
+        assertEquals(2, engine.index.size());
+        // A scan like that is repeated soon rather than in half an hour.
+        clock.addAndGet(2 * 60_000L + 1_000);
+        engine.tick();
+        assertEquals(1, scans.size());
+    }
+
+    @Test
+    void weakFlipsAreCheckedWithCoflnetInTheBackground() {
+        config.sourceCoflnet = true;
+        ManualExecutor background = new ManualExecutor();
+        engine.useExecutors(null, background);
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        http.put(ENDED, TestData.endedPage(T0));
+        engine.tick();
+        background.runAll();
+        assertTrue(engine.initialScanDone());
+
+        // No sales of our own: 800M against a lowest BIN of 900M is not enough on its own, but
+        // Coflnet's median adds the second reference.
+        http.put("https://sky.coflnet.com/api/item/price/HYPERION", "{\"median\":890000000,\"volume\":4}");
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 10_000)));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        assertTrue(platform.withCommand("/viewauction new").isEmpty());
+        assertEquals(0, http.count("https://sky.coflnet.com/api/item/price/HYPERION"));
+        background.runAll();
+        assertEquals(1, http.count("https://sky.coflnet.com/api/item/price/HYPERION"));
+        List<Msg> flips = platform.withCommand("/viewauction new");
+        assertEquals(1, flips.size());
+        assertFalse(flips.get(0).toPlainString().contains("⚠"), flips.get(0).toPlainString());
+    }
+
+    @Test
+    void weakFlipsStillArriveWhenCoflnetIsDown() {
+        config.sourceCoflnet = true;
+        ManualExecutor background = new ManualExecutor();
+        engine.useExecutors(null, background);
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        http.put(ENDED, TestData.endedPage(T0));
+        engine.tick();
+        background.runAll();
+
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 700_000_000L, t1 - 10_000)));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        background.runAll();
+        List<Msg> flips = platform.withCommand("/viewauction new");
+        assertEquals(1, flips.size());
+        assertTrue(flips.get(0).toPlainString().contains("⚠"), flips.get(0).toPlainString());
+        assertEquals(1, http.count("https://sky.coflnet.com/api/item/price/HYPERION"));
+    }
+
+    @Test
+    void notificationsShowHowOldTheAuctionIs() {
+        initialMarket();
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 12_000)));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        List<Msg> flips = platform.withCommand("/viewauction new");
+        assertEquals(1, flips.size());
+        assertTrue(flips.get(0).toPlainString().contains("| 13s"), flips.get(0).toPlainString());
+    }
+
+    @Test
+    void unchangedPagesAreCheckedOftenButNotDownloaded() {
+        config.bzEnabled = false;
+        initialMarket();
+        assertEquals(0, http.aborts.get());
+        // Hypixel is a little late with the next refresh: both auction endpoints are asked again
+        // every half second, and each answer is dropped as soon as it shows nothing changed.
+        clock.set(T0 + 59_000);
+        engine.tick();
+        clock.addAndGet(250);
+        engine.tick();
+        clock.addAndGet(250);
+        engine.tick();
+        assertEquals(3, http.count(PAGE0));
+        assertEquals(3, http.count(ENDED));
+        assertEquals(4, http.aborts.get());
+    }
+
+    @Test
     void nextUpdateTiming() {
         long now = 10_000_000L;
-        assertEquals(now + 3_000, Engine.expectedNextUpdate(now - 120_000, 0, now));
-        assertEquals(now - 20_000 + 60_000 + 2_000, Engine.expectedNextUpdate(now - 20_000, now, now));
-        assertEquals(now - 20_000 + 60_000 + 2_000 + 1_500, Engine.expectedNextUpdate(now - 20_000, now - 1_500, now));
+        assertEquals(now + 500, Engine.expectedNextUpdate(now - 120_000, 0, now));
+        assertEquals(now - 20_000 + 60_000 - 1_000, Engine.expectedNextUpdate(now - 20_000, now, now));
+        assertEquals(now - 20_000 + 60_000 - 1_000 + 1_500, Engine.expectedNextUpdate(now - 20_000, now - 1_500, now));
         assertEquals(now + 60_000, Engine.expectedNextUpdate(0, 0, now));
     }
 }

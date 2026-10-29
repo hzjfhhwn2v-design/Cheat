@@ -37,6 +37,20 @@ public final class AuctionFlipFinder {
         return judge(listing, valuation);
     }
 
+    /**
+     * True when the local data hints at a flip but lacks sales data to confirm it, so a
+     * (slower) Coflnet lookup might turn it into one.
+     */
+    public boolean worthConfirming(AuctionIndex.Listing listing) {
+        ItemKey key = listing.key;
+        if (config.isBlacklisted(key.id, key.key) || (config.budget > 0 && listing.price > config.budget)) {
+            return false;
+        }
+        Valuation valuation = prices.valuate(key, listing.uuid, listing.unitPrice, false);
+        return prices.wouldUseRemote(key, valuation) && !Double.isNaN(valuation.lbinReference())
+            && profitAt(valuation.lbinReference(), listing) >= config.ahMinProfit;
+    }
+
     AuctionFlip judge(AuctionIndex.Listing listing, Valuation valuation) {
         if (!(valuation.value > 0)) {
             return null;

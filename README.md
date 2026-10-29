@@ -23,9 +23,27 @@ la stima (BIN più basso degli altri venditori, mediana delle vendite, NEU, Cofl
 Esempio:
 
 ```
-[FlipScout] AH Hyperion » 820M → 900M | +48.5M (5.9%) | vol 6.5/g [APRI]
+[FlipScout] AH Hyperion » 820M → 900M | +48.5M (5.9%) | vol 6.5/g | 4s [APRI]
 [FlipScout] BZ crollo Enchanted Diamond » compra a 120.5 (di solito 162, -26%) | ~+1.2M [BAZAAR]
 ```
+
+L'ultima parte della riga AH (`4s`) dice da quanto tempo l'asta è in vendita.
+
+## Quanto è veloce
+
+L'API di Hypixel pubblica le aste nuove **una volta al minuto**: nessun mod che usa l'API può vederle prima di
+quell'aggiornamento. FlipScout cerca di non aggiungere ritardi suoi:
+
+- poco prima dell'aggiornamento previsto chiede ogni mezzo secondo se è uscito, tenendo conto della differenza tra
+  l'orologio del PC e quello di Hypixel. Finché non è cambiato legge solo l'inizio della risposta e la chiude;
+- appena esce legge le prime pagine, dove finiscono le aste nuove, e ti avvisa subito: di solito entro un secondo circa;
+- la scansione completa delle aste, le vendite, il bazaar e le richieste a Coflnet vanno in parallelo e non bloccano
+  gli avvisi. Solo quando un flip si basa su un unico prezzo il mod chiede prima conferma a Coflnet (di solito meno di
+  un secondo).
+
+In pratica un'asta ti arriva in chat tra 1 e 60 secondi circa dopo la messa in vendita, a seconda di quando cade
+rispetto all'aggiornamento di Hypixel. Chi guarda l'asta in gioco la vede subito, quindi i flip più evidenti a volte
+spariscono prima che tu clicchi.
 
 ## Installazione
 
@@ -96,7 +114,7 @@ Stanno in `config/flipscout/flipscout.properties` (ogni voce è commentata). Puo
 | `ah.strategy` | `conservative` | `conservative` = il minore tra BIN più basso e mediana vendite; `lbin`; `sales` |
 | `ah.fullScanMinutes` | `30` | ogni quanto riscaricare tutte le aste |
 | `ah.pollPages` | `2` | pagine di aste nuove controllate ogni minuto |
-| `bz.intervalSeconds` | `60` | ogni quanto controllare il bazaar |
+| `bz.intervalSeconds` | `20` | ogni quanto controllare il bazaar |
 | `bz.flip.minMarginPercent` | `5` | margine minimo dei flip con ordini |
 | `bz.flip.minProfitPerHour` | `1m` | profitto potenziale minimo all'ora |
 | `bz.crash.dropPercent` | `20` | calo minimo per segnalare un crollo |
@@ -128,13 +146,12 @@ incantesimo e livello, le rune per tipo e livello, le armature con attributi per
 
 ## Da sapere
 
-- L'API di Hypixel si aggiorna una volta al minuto, quindi una notifica può arrivare fino a un minuto dopo la messa in
-  vendita: le occasioni migliori a volte sono già sparite quando clicchi.
 - `/bz` lontano dall'hub richiede il Booster Cookie.
 - Su Fabric 1.21.6 e successive, se Hypixel non dichiara il comando `/viewauction` Minecraft chiede conferma prima
   di eseguirlo (un clic in più). `/flipscout open` lo invia direttamente.
-- Consumo di rete: qualche MB al minuto, soprattutto per la scansione completa delle aste. Per ridurlo alza
-  `ah.fullScanMinutes` e `bz.intervalSeconds`, oppure metti `ah.pollPages` a 1.
+- Consumo di rete: qualche MB al minuto, soprattutto per la scansione completa delle aste (i controlli ogni mezzo
+  secondo leggono solo l'inizio della risposta). Per ridurlo alza `ah.fullScanMinutes` e `bz.intervalSeconds`, oppure
+  metti `ah.pollPages` a 1.
 - Se una fonte non risponde il mod continua con le altre; `/flipscout status` mostra quale ha problemi. Gli indirizzi
   delle fonti sono modificabili (`url.hypixel`, `url.neu`, `url.coflnet`).
 - Sul launcher ufficiale la 1.8.9 gira con un Java 8 vecchio che non riconosce alcuni certificati HTTPS recenti:

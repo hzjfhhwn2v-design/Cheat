@@ -3,6 +3,7 @@ package dev.flipscout.core;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** What the engine is doing, for /flipscout status. */
 public final class Status {
@@ -17,8 +18,8 @@ public final class Status {
     public volatile long lastBazaarPoll;
     public volatile long lastNeu;
     public volatile long lastItems;
-    public volatile int auctionNotifications;
-    public volatile int bazaarNotifications;
+    public final AtomicInteger auctionNotifications = new AtomicInteger();
+    public final AtomicInteger bazaarNotifications = new AtomicInteger();
 
     private final Map<String, String> errors = new ConcurrentHashMap<String, String>();
 
