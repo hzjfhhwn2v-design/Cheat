@@ -59,6 +59,8 @@ public final class Engine {
     /** Auctions created this recently are new: older ones were simply missed, not just listed. */
     private static final long FRESH_MS = 5 * MINUTE;
     private static final int MAX_RECENT = 30;
+    /** Extra auction pages read per poll while they still contain new auctions. */
+    private static final int EXTRA_POLL_PAGES = 3;
 
     /** A notification kept for /flipscout recent and /flipscout open. */
     public static final class Notification {
@@ -115,6 +117,8 @@ public final class Engine {
     private volatile boolean initialScanDone;
     private volatile ScheduledExecutorService scheduler;
     private volatile ExecutorService workers;
+    /** Local clock minus Hypixel's, from the Date header of the last auction page. */
+    private volatile long clockSkew;
 
     private boolean salesLoaded;
     private long scanSeq;
@@ -246,7 +250,7 @@ public final class Engine {
             }
             now = clock.getAsLong();
             if (now >= nextExpire) {
-                index.removeExpired(now);
+                index.removeExpired(now - clockSkew);
                 nextExpire = now + 30_000L;
             }
         }
@@ -268,6 +272,7 @@ public final class Engine {
         status.scanning = true;
         try {
             AuctionPage first = hypixel.fetchAuctionPage(0);
+            noteServerTime(first);
             int pages = Math.max(1, first.totalPages);
             ExecutorService pool = workers;
             List<Future<AuctionPage>> futures = new ArrayList<Future<AuctionPage>>();
@@ -340,6 +345,7 @@ public final class Engine {
     private void pollAuctions(long now) {
         try {
             AuctionPage first = hypixel.fetchAuctionPage(0);
+            noteServerTime(first);
             status.lastAuctionPoll = now;
             if (first.lastUpdated != 0 && first.lastUpdated <= lastAuctionsUpdate) {
                 auctionStale++;
@@ -348,10 +354,17 @@ public final class Engine {
             }
             auctionStale = 0;
             lastAuctionsUpdate = first.lastUpdated;
+            long recentSince = now - clockSkew - 2 * MINUTE;
             merge(decodeAll(first), scanSeq, now);
-            int pages = Math.min(config.ahPollPages, Math.max(1, first.totalPages));
-            for (int p = 1; p < pages; p++) {
-                merge(decodeAll(hypixel.fetchAuctionPage(p)), scanSeq, clock.getAsLong());
+            int recent = countStartedSince(first, recentSince);
+            int pages = Math.max(1, first.totalPages);
+            int required = Math.min(config.ahPollPages, pages);
+            int max = Math.min(pages, config.ahPollPages + EXTRA_POLL_PAGES);
+            // New auctions sit on the first pages; keep reading while a page still has some.
+            for (int p = 1; p < max && (p < required || recent > 0); p++) {
+                AuctionPage page = decodeAll(hypixel.fetchAuctionPage(p));
+                merge(page, scanSeq, clock.getAsLong());
+                recent = countStartedSince(page, recentSince);
             }
             status.ok("aste");
             auctionBackoff.reset();
@@ -396,10 +409,10 @@ public final class Engine {
             }
             ItemKeys.Decoded decoded = auction.decoded;
             AuctionIndex.Listing listing = new AuctionIndex.Listing(auction.uuid, normalizeUuid(auction.seller),
-                decoded.name, auction.tier, decoded.key, auction.startingBid, decoded.count,
-                auction.start, auction.end, now, scan);
+                decoded.name, auction.tier == null ? null : auction.tier.intern(), decoded.key, auction.startingBid,
+                decoded.count, auction.start, auction.end, now, scan);
             index.add(listing);
-            if (initialScanDone && now - auction.start < FRESH_MS) {
+            if (initialScanDone && now - clockSkew - auction.start < FRESH_MS) {
                 consider(listing, now);
             }
         }
@@ -419,7 +432,7 @@ public final class Engine {
             return;
         }
         status.auctionNotifications++;
-        deliver(notifier.auction(flip, now), true, now);
+        deliver(notifier.auction(flip, now - clockSkew), true, now);
     }
 
     private void pollEnded(long now) {
@@ -473,6 +486,27 @@ public final class Engine {
 
     private static long staleDelay(int attempts) {
         return attempts < 10 ? 3_000L : attempts < 30 ? 10_000L : 30_000L;
+    }
+
+    private void noteServerTime(AuctionPage page) {
+        if (page.serverDate > 0) {
+            clockSkew = clock.getAsLong() - page.serverDate;
+        }
+    }
+
+    private static int countStartedSince(AuctionPage page, long since) {
+        int count = 0;
+        for (Auction auction : page.auctions) {
+            if (auction.start >= since) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Current time on Hypixel's clock (auction timestamps use it). */
+    public long serverTime() {
+        return clock.getAsLong() - clockSkew;
     }
 
     // ---- Bazaar ----

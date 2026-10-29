@@ -98,6 +98,48 @@ class EngineTest {
     }
 
     @Test
+    void localClockAheadOfHypixelStillCountsNewAuctions() {
+        initialMarket();
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 10_000)));
+        // The PC clock runs ten minutes fast: Hypixel's Date header says t1.
+        http.serverDate = t1;
+        clock.set(t1 + 10 * 60_000L + 5_000);
+        engine.tick();
+        assertEquals(1, platform.withCommand("/viewauction new").size());
+        assertEquals(t1, engine.serverTime(), 5_000);
+    }
+
+    @Test
+    void pollingFollowsNewAuctionsOntoLaterPages() {
+        String page = H + "/v2/skyblock/auctions?page=";
+        http.put(PAGE0, TestData.auctionPage(0, 4, T0,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        for (int p = 1; p < 4; p++) {
+            http.put(page + p, TestData.auctionPage(p, 4, T0));
+        }
+        http.put(ENDED, TestData.endedPage(T0));
+        engine.tick();
+        assertEquals(1, http.count(page + 3));
+
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 4, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("n0", "s2", 950_000_000L, t1 - 10_000)));
+        http.put(page + 1, TestData.auctionPage(1, 4, t1, hyperion("n1", "s3", 950_000_000L, t1 - 20_000)));
+        http.put(page + 2, TestData.auctionPage(2, 4, t1, hyperion("old", "s4", 950_000_000L, T0 - 3_600_000L)));
+        http.put(page + 3, TestData.auctionPage(3, 4, t1, hyperion("n3", "s5", 950_000_000L, t1 - 5_000)));
+        clock.set(t1 + 5_000);
+        engine.tick();
+        // Pages 0-1 always, page 2 because page 1 still had new auctions, then stop.
+        assertEquals(2, http.count(page + 2));
+        assertEquals(1, http.count(page + 3));
+        assertEquals(4, engine.index.size());
+    }
+
+    @Test
     void staleCheapAuctionIsNotNotified() {
         initialMarket();
         long t1 = T0 + 60_000;

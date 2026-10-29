@@ -216,7 +216,7 @@ final class Commands {
         engine.runAsync(new Runnable() {
             @Override
             public void run() {
-                long now = clock.getAsLong();
+                long now = engine.serverTime();
                 if (auctions) {
                     List<AuctionFlip> flips = engine.topAuctions(n);
                     if (flips.isEmpty()) {

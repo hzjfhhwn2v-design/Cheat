@@ -3,11 +3,11 @@ plugins {
     id("net.fabricmc.fabric-loom") version "1.19-SNAPSHOT"
 }
 
-val modVersion: String by project
-val minecraftVersion: String by project
-val minecraftRange: String by project
-val loaderVersion: String by project
-val fabricVersion: String by project
+val modVersion = providers.gradleProperty("modVersion").get()
+val minecraftVersion = providers.gradleProperty("minecraftVersion").get()
+val minecraftRange = providers.gradleProperty("minecraftRange").get()
+val loaderVersion = providers.gradleProperty("loaderVersion").get()
+val fabricVersion = providers.gradleProperty("fabricVersion").get()
 
 version = modVersion
 group = "dev.flipscout"
@@ -30,13 +30,11 @@ sourceSets.main {
     resources.srcDir("../core/src/main/resources")
 }
 
-java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
-}
-
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
+    // Minecraft 26.x runs on Java 25.
     options.release.set(25)
+    options.compilerArgs.add("-Xlint:deprecation")
 }
 
 tasks.processResources {

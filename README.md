@@ -50,7 +50,7 @@ Per compilarlo da solo:
 
 ```bash
 cd forge-1.8.9 && ./gradlew build    # Java 17 per Gradle; Java 8 lo scarica da solo
-cd fabric-1.21 && ./gradlew build    # Java 21; per un'altra 1.21.x: -PminecraftVersion=... -PfabricVersion=...
+cd fabric-1.21 && ./gradlew build    # Gradle su Java 25; per un'altra 1.21.x: -PminecraftVersion=... -PfabricVersion=...
 cd fabric-26 && ./gradlew build      # Java 25; Minecraft 26.x
 ```
 

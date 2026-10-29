@@ -2,6 +2,8 @@ package dev.flipscout.fabric;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -9,7 +11,6 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import dev.flipscout.core.FlipScout;
 import dev.flipscout.core.Log;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -47,14 +48,18 @@ public final class FlipScoutFabric implements ClientModInitializer {
         flipScout.start();
     }
 
+    // Plain Brigadier builders: Fabric's helper class for them was renamed in 26.x.
     private void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         LiteralCommandNode<FabricClientCommandSource> root = dispatcher.register(
-            ClientCommandManager.literal("flipscout")
+            LiteralArgumentBuilder.<FabricClientCommandSource>literal("flipscout")
                 .executes(context -> run(""))
-                .then(ClientCommandManager.argument("args", StringArgumentType.greedyString())
+                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("args",
+                        StringArgumentType.greedyString())
                     .suggests(this::suggest)
                     .executes(context -> run(StringArgumentType.getString(context, "args")))));
-        dispatcher.register(ClientCommandManager.literal("fsc").executes(context -> run("")).redirect(root));
+        dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("fsc")
+            .executes(context -> run(""))
+            .redirect(root));
     }
 
     private int run(String args) {
