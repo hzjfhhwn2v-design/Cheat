@@ -19,6 +19,7 @@ public final class FlipScout {
     private final Engine engine;
     private final ProfitTracker tracker;
     private final Commands commands;
+    private final ConfigEditor editor;
     private boolean shutdownHookAdded;
 
     /** @param configDir the game's config folder; data goes into its flipscout subfolder */
@@ -37,6 +38,12 @@ public final class FlipScout {
         tracker = new ProfitTracker(config, new File(dataDir, "guadagni.json"), clock, platform, engine::runAsync);
         tracker.load();
         commands = new Commands(config, configFile, engine, tracker, platform, clock);
+        editor = new ConfigEditor(config, configFile);
+    }
+
+    /** For the settings screen. */
+    public ConfigEditor editor() {
+        return editor;
     }
 
     public synchronized void start() {

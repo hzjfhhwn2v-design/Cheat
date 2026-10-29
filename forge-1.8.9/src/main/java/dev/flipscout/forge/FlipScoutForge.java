@@ -2,6 +2,7 @@ package dev.flipscout.forge;
 
 import dev.flipscout.core.FlipScout;
 import dev.flipscout.core.Log;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
@@ -17,13 +18,20 @@ import org.apache.logging.log4j.Logger;
 import org.lwjgl.input.Keyboard;
 
 @Mod(modid = FlipScout.MOD_ID, name = "FlipScout", version = FlipScout.VERSION, clientSideOnly = true,
-    acceptedMinecraftVersions = "[1.8.9]")
+    acceptedMinecraftVersions = "[1.8.9]", guiFactory = "dev.flipscout.forge.FlipScoutGuiFactory")
 public class FlipScoutForge {
     private static final Logger LOGGER = LogManager.getLogger("FlipScout");
+    private static FlipScout instance;
 
     private final ForgePlatform platform = new ForgePlatform();
     private FlipScout flipScout;
     private KeyBinding openKey;
+    private KeyBinding settingsKey;
+
+    /** For the settings screen opened from Forge's mod list. */
+    static FlipScout flipScout() {
+        return instance;
+    }
     private int ticks;
 
     @Mod.EventHandler
@@ -41,6 +49,7 @@ public class FlipScoutForge {
             }
         });
         flipScout = new FlipScout(platform, event.getModConfigurationDirectory());
+        instance = flipScout;
     }
 
     @Mod.EventHandler
@@ -48,6 +57,8 @@ public class FlipScoutForge {
         ClientCommandHandler.instance.registerCommand(new FlipScoutCommand(flipScout));
         openKey = new KeyBinding("Apri l'ultima notifica", Keyboard.KEY_NONE, "FlipScout");
         ClientRegistry.registerKeyBinding(openKey);
+        settingsKey = new KeyBinding("Apri le impostazioni", Keyboard.KEY_NONE, "FlipScout");
+        ClientRegistry.registerKeyBinding(settingsKey);
         MinecraftForge.EVENT_BUS.register(this);
         flipScout.start();
     }
@@ -67,6 +78,14 @@ public class FlipScoutForge {
         }
         while (openKey.isPressed()) {
             flipScout.openLast();
+        }
+        boolean settings = false;
+        while (settingsKey.isPressed()) {
+            settings = true;
+        }
+        // Opened a tick after the command, once the chat screen has closed.
+        if (platform.takeConfigScreenRequest() || settings) {
+            Minecraft.getMinecraft().displayGuiScreen(new FlipScoutConfigGui(null, flipScout.editor()));
         }
         if (++ticks % 20 == 0) {
             platform.update();

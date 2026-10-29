@@ -83,6 +83,7 @@ comune alle build Fabric in `fabric-common/`; le versioni usate per ogni build F
 | Comando | Cosa fa |
 |---|---|
 | `/flipscout` | stato in breve |
+| `/flipscout gui` | apre il menu delle impostazioni (anche `/flipscout impostazioni`) |
 | `/flipscout on` / `off` | accende o spegne tutto (spento non fa nessuna richiesta) |
 | `/flipscout ah on\|off` | notifiche delle aste |
 | `/flipscout bz on\|off` | notifiche del bazaar; anche `bz flip\|crash\|npc on\|off` per i singoli tipi |
@@ -103,7 +104,18 @@ comune alle build Fabric in `fabric-common/`; le versioni usate per ogni build F
 
 ## Impostazioni
 
-Stanno in `config/flipscout/flipscout.properties` (ogni voce è commentata). Puoi modificarle lì e fare
+Il modo più comodo è il **menu**: `/flipscout gui`, oppure il tasto *Config* nella lista dei mod (Forge), oppure un
+tasto da assegnare in *Controlli → FlipScout* (Forge). È fatto come quelli di NEU e SkyHanni:
+
+- **Sezioni a sinistra:** Generale, Asta, Bazaar, Guadagni, Fonti dati. **In alto** una ricerca su nomi e descrizioni
+  di tutte le impostazioni.
+- **Interruttori ON/OFF**, scelte che cambiano col clic (la strategia) e **campi** per numeri e importi (`500k`, `2m`):
+  un valore non valido diventa rosso e in basso compare il motivo, finché non lo correggi non viene applicato.
+- **Passando il mouse** su un'impostazione vedi a cosa serve, i valori possibili e quello predefinito; le voci
+  cambiate sono gialle e hanno il tasto **↺** per tornare al predefinito.
+- **Pagine:** con la rotellina o le frecce in basso. Le modifiche valgono subito e si salvano quando chiudi.
+
+In alternativa stanno in `config/flipscout/flipscout.properties` (ogni voce è commentata): puoi modificarle lì e fare
 `/flipscout reload`, oppure usare `/flipscout set`. Gli importi accettano `500k`, `2m`, `1.5b`.
 
 | Chiave | Predefinito | Significato |

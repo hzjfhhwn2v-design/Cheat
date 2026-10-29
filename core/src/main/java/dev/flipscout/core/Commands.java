@@ -30,8 +30,8 @@ import java.util.function.LongSupplier;
 /** /flipscout and its sub-commands, with messages in Italian. */
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
-        "help", "on", "off", "ah", "bz", "top", "recent", "open", "guadagni", "sessione", "totale", "flip", "magazzino",
-        "set", "config", "blacklist", "status", "reload", "test");
+        "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "guadagni", "sessione", "totale", "flip",
+        "magazzino", "set", "config", "blacklist", "status", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm");
     private static final List<String> ON_OFF = Arrays.asList("on", "off");
@@ -73,6 +73,12 @@ final class Commands {
                 case "?":
                     help();
                     break;
+                case "gui":
+                case "menu":
+                case "impostazioni":
+                case "settings":
+                    platform.openConfigScreen();
+                    break;
                 case "on":
                     toggleAll(true);
                     break;
@@ -100,7 +106,6 @@ final class Commands {
                     set(args);
                     break;
                 case "config":
-                case "impostazioni":
                     showConfig(args);
                     break;
                 case "blacklist":
@@ -150,12 +155,14 @@ final class Commands {
             : config.onlyOnHypixel && !platform.isOnHypixel() ? "§eacceso, in attesa di Hypixel" : "§aattivo";
         info("§fFlipScout " + FlipScout.VERSION + " §8- " + state
             + " §8| §7aste " + onOff(config.ahEnabled) + " §7bazaar " + onOff(config.bzEnabled));
-        platform.showMessage(new Msg().suggest("§7Scrivi §e/flipscout help §7per i comandi", "/flipscout help",
-            "§eClicca per scriverlo"));
+        platform.showMessage(new Msg()
+            .run("§6[IMPOSTAZIONI] ", "/flipscout gui", "§7Apre il menu delle impostazioni")
+            .suggest("§7Scrivi §e/flipscout help §7per i comandi", "/flipscout help", "§eClicca per scriverlo"));
     }
 
     private void help() {
         info("§fComandi §8(clicca per scriverli):");
+        helpLine("gui", "gui", "apre il menu delle impostazioni");
         helpLine("on|off", "", "attiva o spegne tutto");
         helpLine("ah on|off", "ah ", "notifiche delle aste BIN");
         helpLine("bz on|off", "bz ", "notifiche del bazaar (anche: bz flip|crash|npc on|off)");

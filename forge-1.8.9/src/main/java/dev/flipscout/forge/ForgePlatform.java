@@ -22,6 +22,7 @@ final class ForgePlatform implements Platform {
     private volatile boolean onHypixel;
     private volatile boolean inSkyblock;
     private volatile String playerUuid;
+    private volatile boolean configScreenWanted;
 
     /** Called on the client thread about once a second. */
     void update() {
@@ -120,5 +121,17 @@ final class ForgePlatform implements Platform {
     @Override
     public String playerUuid() {
         return playerUuid;
+    }
+
+    @Override
+    public void openConfigScreen() {
+        configScreenWanted = true;
+    }
+
+    /** True once after {@link #openConfigScreen()}; checked every client tick. */
+    boolean takeConfigScreenRequest() {
+        boolean wanted = configScreenWanted;
+        configScreenWanted = false;
+        return wanted;
     }
 }

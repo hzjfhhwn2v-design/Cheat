@@ -7,6 +7,7 @@ public final class FakePlatform implements Platform {
     public final List<Msg> messages = new ArrayList<Msg>();
     public final List<String> commands = new ArrayList<String>();
     public int sounds;
+    public int configScreens;
     public volatile boolean onHypixel = true;
     public volatile boolean inSkyblock = true;
     public volatile String uuid;
@@ -39,6 +40,11 @@ public final class FakePlatform implements Platform {
     @Override
     public String playerUuid() {
         return uuid;
+    }
+
+    @Override
+    public synchronized void openConfigScreen() {
+        configScreens++;
     }
 
     public synchronized List<Msg> withCommand(String command) {

@@ -83,12 +83,25 @@ public final class Config {
 
     /** A named, typed setting that can be shown, parsed and saved. */
     public abstract static class Setting {
+        /** How a setting is edited in the settings screen. */
+        public enum Kind { TOGGLE, CHOICE, NUMBER, TEXT }
+
         public final String key;
+        /** Short name for the settings screen. */
+        public final String label;
         public final String help;
 
-        Setting(String key, String help) {
+        Setting(String key, String label, String help) {
             this.key = key;
+            this.label = label;
             this.help = help;
+        }
+
+        public abstract Kind kind();
+
+        /** What the value may be ("10 - 600", "importo, es. 500k o 2m"), or "" when there is nothing to add. */
+        public String hint() {
+            return "";
         }
 
         public abstract String get(Config config);
@@ -114,197 +127,197 @@ public final class Config {
 
     public static final List<Section> SECTIONS = Collections.unmodifiableList(Arrays.asList(
         new Section("Generale",
-            new BoolSetting("enabled", "Attiva o disattiva tutto il mod (niente richieste quando è spento)") {
+            new BoolSetting("enabled", "Mod attivo", "Attiva o disattiva tutto il mod (niente richieste quando è spento)") {
                 boolean read(Config c) { return c.enabled; }
                 void write(Config c, boolean v) { c.enabled = v; }
             },
-            new BoolSetting("onlyOnHypixel", "Scarica i dati solo quando sei connesso a Hypixel") {
+            new BoolSetting("onlyOnHypixel", "Solo su Hypixel", "Scarica i dati solo quando sei connesso a Hypixel") {
                 boolean read(Config c) { return c.onlyOnHypixel; }
                 void write(Config c, boolean v) { c.onlyOnHypixel = v; }
             },
-            new BoolSetting("onlyInSkyblock", "Mostra le notifiche solo quando sei in SkyBlock") {
+            new BoolSetting("onlyInSkyblock", "Notifiche solo in SkyBlock", "Mostra le notifiche solo quando sei in SkyBlock") {
                 boolean read(Config c) { return c.onlyInSkyblock; }
                 void write(Config c, boolean v) { c.onlyInSkyblock = v; }
             },
-            new BoolSetting("sound", "Suono quando arriva una notifica") {
+            new BoolSetting("sound", "Suono delle notifiche", "Suono quando arriva una notifica") {
                 boolean read(Config c) { return c.sound; }
                 void write(Config c, boolean v) { c.sound = v; }
             },
-            new CoinsSetting("budget", "Soldi massimi da spendere per un flip (0 = nessun limite)", 0) {
+            new CoinsSetting("budget", "Budget massimo per flip", "Soldi massimi da spendere per un flip (0 = nessun limite)", 0) {
                 long read(Config c) { return c.budget; }
                 void write(Config c, long v) { c.budget = v; }
             },
-            new ListSetting("blacklist", "ID da ignorare, separati da virgola (es. HYPERION,ENCHANTMENT_SHARPNESS_6)") {
+            new ListSetting("blacklist", "Oggetti ignorati", "ID da ignorare, separati da virgola (es. HYPERION,ENCHANTMENT_SHARPNESS_6)") {
                 Set<String> read(Config c) { return c.blacklist; }
                 void write(Config c, Set<String> v) { c.blacklist = v; }
             },
-            new BoolSetting("debug", "Scrive più dettagli nel log del gioco") {
+            new BoolSetting("debug", "Log dettagliato (debug)", "Scrive più dettagli nel log del gioco") {
                 boolean read(Config c) { return c.debug; }
                 void write(Config c, boolean v) { c.debug = v; Log.debugEnabled = v; }
             }),
         new Section("Asta (BIN)",
-            new BoolSetting("ah.enabled", "Notifiche per le aste BIN sotto prezzo") {
+            new BoolSetting("ah.enabled", "Notifiche delle aste", "Notifiche per le aste BIN sotto prezzo") {
                 boolean read(Config c) { return c.ahEnabled; }
                 void write(Config c, boolean v) { c.ahEnabled = v; }
             },
-            new CoinsSetting("ah.minProfit", "Profitto minimo dopo le tasse (es. 500k, 2m)", 0) {
+            new CoinsSetting("ah.minProfit", "Profitto minimo", "Profitto minimo dopo le tasse (es. 500k, 2m)", 0) {
                 long read(Config c) { return c.ahMinProfit; }
                 void write(Config c, long v) { c.ahMinProfit = v; }
             },
-            new DecimalSetting("ah.minPercent", "Profitto minimo in percentuale del prezzo", 0, 10_000) {
+            new DecimalSetting("ah.minPercent", "Profitto minimo in %", "Profitto minimo in percentuale del prezzo", 0, 10_000) {
                 double read(Config c) { return c.ahMinPercent; }
                 void write(Config c, double v) { c.ahMinPercent = v; }
             },
-            new DecimalSetting("ah.minVolume", "Vendite al giorno minime dell'oggetto (se il dato c'è)", 0, 1_000_000) {
+            new DecimalSetting("ah.minVolume", "Vendite minime al giorno", "Vendite al giorno minime dell'oggetto (se il dato c'è)", 0, 1_000_000) {
                 double read(Config c) { return c.ahMinVolume; }
                 void write(Config c, double v) { c.ahMinVolume = v; }
             },
-            new BoolSetting("ah.requireVolume", "Scarta gli oggetti di cui non si conoscono le vendite") {
+            new BoolSetting("ah.requireVolume", "Solo oggetti con vendite note", "Scarta gli oggetti di cui non si conoscono le vendite") {
                 boolean read(Config c) { return c.ahRequireVolume; }
                 void write(Config c, boolean v) { c.ahRequireVolume = v; }
             },
-            new BoolSetting("ah.upgrades", "Conta il valore degli upgrade: recombobulator, potato book, incantesimi,"
+            new BoolSetting("ah.upgrades", "Conta gli upgrade", "Conta il valore degli upgrade: recombobulator, potato book, incantesimi,"
                 + " master star, gemme, pergamene, oggetti dei pet...") {
                 boolean read(Config c) { return c.ahUpgrades; }
                 void write(Config c, boolean v) { c.ahUpgrades = v; }
             },
-            new IntSetting("ah.upgradePercent", "Quanta parte del valore degli upgrade contare, in %", 0, 100) {
+            new IntSetting("ah.upgradePercent", "Quota degli upgrade (%)", "Quanta parte del valore degli upgrade contare, in %", 0, 100) {
                 int read(Config c) { return c.ahUpgradePercent; }
                 void write(Config c, int v) { c.ahUpgradePercent = v; }
             },
-            new ChoiceSetting("ah.strategy", "Come stimare il valore: conservative = il minore tra LBIN e vendite recenti,"
+            new ChoiceSetting("ah.strategy", "Strategia di valutazione", "Come stimare il valore: conservative = il minore tra LBIN e vendite recenti,"
                 + " lbin = prezzo BIN più basso, sales = mediana delle vendite", "conservative", "lbin", "sales") {
                 String read(Config c) { return c.ahStrategy; }
                 void write(Config c, String v) { c.ahStrategy = v; }
             },
-            new IntSetting("ah.minSalesSamples", "Vendite registrate necessarie per usare la mediana delle vendite", 1, 100) {
+            new IntSetting("ah.minSalesSamples", "Vendite per usare la mediana", "Vendite registrate necessarie per usare la mediana delle vendite", 1, 100) {
                 int read(Config c) { return c.ahMinSalesSamples; }
                 void write(Config c, int v) { c.ahMinSalesSamples = v; }
             },
-            new IntSetting("ah.fullScanMinutes", "Ogni quanti minuti riscaricare tutte le aste (pesante: decine di MB ogni volta)", 5, 240) {
+            new IntSetting("ah.fullScanMinutes", "Scansione completa ogni (min)", "Ogni quanti minuti riscaricare tutte le aste (pesante: decine di MB ogni volta)", 5, 240) {
                 int read(Config c) { return c.ahFullScanMinutes; }
                 void write(Config c, int v) { c.ahFullScanMinutes = v; }
             },
-            new IntSetting("ah.pollPages", "Pagine di aste nuove controllate ogni minuto", 1, 10) {
+            new IntSetting("ah.pollPages", "Pagine controllate ogni minuto", "Pagine di aste nuove controllate ogni minuto", 1, 10) {
                 int read(Config c) { return c.ahPollPages; }
                 void write(Config c, int v) { c.ahPollPages = v; }
             },
-            new DecimalSetting("ah.fee.under10m", "Tassa di creazione asta in % sotto i 10M", 0, 100) {
+            new DecimalSetting("ah.fee.under10m", "Tassa asta sotto 10M (%)", "Tassa di creazione asta in % sotto i 10M", 0, 100) {
                 double read(Config c) { return c.ahFeeUnder10m; }
                 void write(Config c, double v) { c.ahFeeUnder10m = v; }
             },
-            new DecimalSetting("ah.fee.10mTo100m", "Tassa di creazione asta in % tra 10M e 100M", 0, 100) {
+            new DecimalSetting("ah.fee.10mTo100m", "Tassa asta 10M-100M (%)", "Tassa di creazione asta in % tra 10M e 100M", 0, 100) {
                 double read(Config c) { return c.ahFee10mTo100m; }
                 void write(Config c, double v) { c.ahFee10mTo100m = v; }
             },
-            new DecimalSetting("ah.fee.over100m", "Tassa di creazione asta in % sopra i 100M", 0, 100) {
+            new DecimalSetting("ah.fee.over100m", "Tassa asta sopra 100M (%)", "Tassa di creazione asta in % sopra i 100M", 0, 100) {
                 double read(Config c) { return c.ahFeeOver100m; }
                 void write(Config c, double v) { c.ahFeeOver100m = v; }
             },
-            new DecimalSetting("ah.fee.claim", "Tassa in % sul ritiro dei coins (vendite da 1M in su)", 0, 100) {
+            new DecimalSetting("ah.fee.claim", "Tassa sul ritiro (%)", "Tassa in % sul ritiro dei coins (vendite da 1M in su)", 0, 100) {
                 double read(Config c) { return c.ahFeeClaim; }
                 void write(Config c, double v) { c.ahFeeClaim = v; }
             },
-            new IntSetting("ah.salesWindowDays", "Giorni di vendite da conservare per le statistiche", 1, 14) {
+            new IntSetting("ah.salesWindowDays", "Giorni di storico vendite", "Giorni di vendite da conservare per le statistiche", 1, 14) {
                 int read(Config c) { return c.salesWindowDays; }
                 void write(Config c, int v) { c.salesWindowDays = v; }
             }),
         new Section("Bazaar",
-            new BoolSetting("bz.enabled", "Notifiche del bazaar") {
+            new BoolSetting("bz.enabled", "Notifiche del bazaar", "Notifiche del bazaar") {
                 boolean read(Config c) { return c.bzEnabled; }
                 void write(Config c, boolean v) { c.bzEnabled = v; }
             },
-            new IntSetting("bz.intervalSeconds", "Ogni quanti secondi controllare il bazaar", 10, 600) {
+            new IntSetting("bz.intervalSeconds", "Controllo bazaar ogni (s)", "Ogni quanti secondi controllare il bazaar", 10, 600) {
                 int read(Config c) { return c.bzIntervalSeconds; }
                 void write(Config c, int v) { c.bzIntervalSeconds = v; }
             },
-            new DecimalSetting("bz.tax", "Tassa del bazaar sulle vendite in %", 0, 100) {
+            new DecimalSetting("bz.tax", "Tassa del bazaar (%)", "Tassa del bazaar sulle vendite in %", 0, 100) {
                 double read(Config c) { return c.bzTax; }
                 void write(Config c, double v) { c.bzTax = v; }
             },
-            new IntSetting("bz.maxPerCycle", "Notifiche bazaar massime per ogni aggiornamento", 1, 20) {
+            new IntSetting("bz.maxPerCycle", "Notifiche massime per controllo", "Notifiche bazaar massime per ogni aggiornamento", 1, 20) {
                 int read(Config c) { return c.bzMaxPerCycle; }
                 void write(Config c, int v) { c.bzMaxPerCycle = v; }
             },
-            new BoolSetting("bz.flip.enabled", "Flip con buy order + sell offer") {
+            new BoolSetting("bz.flip.enabled", "Flip con ordini", "Flip con buy order + sell offer") {
                 boolean read(Config c) { return c.bzFlipEnabled; }
                 void write(Config c, boolean v) { c.bzFlipEnabled = v; }
             },
-            new DecimalSetting("bz.flip.minMarginPercent", "Margine minimo in % dopo la tassa", 0, 10_000) {
+            new DecimalSetting("bz.flip.minMarginPercent", "Flip: margine minimo (%)", "Margine minimo in % dopo la tassa", 0, 10_000) {
                 double read(Config c) { return c.bzFlipMinMarginPercent; }
                 void write(Config c, double v) { c.bzFlipMinMarginPercent = v; }
             },
-            new DecimalSetting("bz.flip.minHourlyVolume", "Pezzi scambiati all'ora minimi (lato più lento)", 0, 1e9) {
+            new DecimalSetting("bz.flip.minHourlyVolume", "Flip: scambi minimi all'ora", "Pezzi scambiati all'ora minimi (lato più lento)", 0, 1e9) {
                 double read(Config c) { return c.bzFlipMinHourlyVolume; }
                 void write(Config c, double v) { c.bzFlipMinHourlyVolume = v; }
             },
-            new CoinsSetting("bz.flip.minProfitPerHour", "Profitto potenziale minimo all'ora", 0) {
+            new CoinsSetting("bz.flip.minProfitPerHour", "Flip: profitto minimo all'ora", "Profitto potenziale minimo all'ora", 0) {
                 long read(Config c) { return c.bzFlipMinProfitPerHour; }
                 void write(Config c, long v) { c.bzFlipMinProfitPerHour = v; }
             },
-            new IntSetting("bz.flip.cooldownMinutes", "Minuti prima di riavvisare per lo stesso prodotto", 1, 1440) {
+            new IntSetting("bz.flip.cooldownMinutes", "Flip: pausa tra avvisi (min)", "Minuti prima di riavvisare per lo stesso prodotto", 1, 1440) {
                 int read(Config c) { return c.bzFlipCooldownMinutes; }
                 void write(Config c, int v) { c.bzFlipCooldownMinutes = v; }
             },
-            new BoolSetting("bz.crash.enabled", "Avvisa quando il prezzo d'acquisto crolla rispetto all'ultima ora") {
+            new BoolSetting("bz.crash.enabled", "Avvisi di crollo", "Avvisa quando il prezzo d'acquisto crolla rispetto all'ultima ora") {
                 boolean read(Config c) { return c.bzCrashEnabled; }
                 void write(Config c, boolean v) { c.bzCrashEnabled = v; }
             },
-            new DecimalSetting("bz.crash.dropPercent", "Calo minimo in % rispetto alla mediana recente", 1, 99) {
+            new DecimalSetting("bz.crash.dropPercent", "Crollo: calo minimo (%)", "Calo minimo in % rispetto alla mediana recente", 1, 99) {
                 double read(Config c) { return c.bzCrashDropPercent; }
                 void write(Config c, double v) { c.bzCrashDropPercent = v; }
             },
-            new DecimalSetting("bz.crash.minHourlyVolume", "Acquisti all'ora minimi per considerare un crollo", 0, 1e9) {
+            new DecimalSetting("bz.crash.minHourlyVolume", "Crollo: acquisti minimi all'ora", "Acquisti all'ora minimi per considerare un crollo", 0, 1e9) {
                 double read(Config c) { return c.bzCrashMinHourlyVolume; }
                 void write(Config c, double v) { c.bzCrashMinHourlyVolume = v; }
             },
-            new CoinsSetting("bz.crash.minProfit", "Profitto minimo stimato rivendendo al prezzo normale", 0) {
+            new CoinsSetting("bz.crash.minProfit", "Crollo: profitto minimo", "Profitto minimo stimato rivendendo al prezzo normale", 0) {
                 long read(Config c) { return c.bzCrashMinProfit; }
                 void write(Config c, long v) { c.bzCrashMinProfit = v; }
             },
-            new IntSetting("bz.crash.cooldownMinutes", "Minuti prima di riavvisare per lo stesso crollo", 1, 1440) {
+            new IntSetting("bz.crash.cooldownMinutes", "Crollo: pausa tra avvisi (min)", "Minuti prima di riavvisare per lo stesso crollo", 1, 1440) {
                 int read(Config c) { return c.bzCrashCooldownMinutes; }
                 void write(Config c, int v) { c.bzCrashCooldownMinutes = v; }
             },
-            new BoolSetting("bz.npc.enabled", "Avvisa quando comprare dal bazaar e vendere all'NPC conviene") {
+            new BoolSetting("bz.npc.enabled", "Flip bazaar → NPC", "Avvisa quando comprare dal bazaar e vendere all'NPC conviene") {
                 boolean read(Config c) { return c.bzNpcEnabled; }
                 void write(Config c, boolean v) { c.bzNpcEnabled = v; }
             },
-            new CoinsSetting("bz.npc.minProfit", "Profitto minimo per un flip bazaar -> NPC", 0) {
+            new CoinsSetting("bz.npc.minProfit", "NPC: profitto minimo", "Profitto minimo per un flip bazaar -> NPC", 0) {
                 long read(Config c) { return c.bzNpcMinProfit; }
                 void write(Config c, long v) { c.bzNpcMinProfit = v; }
             },
-            new IntSetting("bz.npc.cooldownMinutes", "Minuti prima di riavvisare per lo stesso flip NPC", 1, 1440) {
+            new IntSetting("bz.npc.cooldownMinutes", "NPC: pausa tra avvisi (min)", "Minuti prima di riavvisare per lo stesso flip NPC", 1, 1440) {
                 int read(Config c) { return c.bzNpcCooldownMinutes; }
                 void write(Config c, int v) { c.bzNpcCooldownMinutes = v; }
             }),
         new Section("Guadagni",
-            new BoolSetting("tracker.enabled", "Riconosce in chat acquisti e vendite (aste e bazaar) e calcola i guadagni") {
+            new BoolSetting("tracker.enabled", "Conta i guadagni", "Riconosce in chat acquisti e vendite (aste e bazaar) e calcola i guadagni") {
                 boolean read(Config c) { return c.trackerEnabled; }
                 void write(Config c, boolean v) { c.trackerEnabled = v; }
             },
-            new BoolSetting("tracker.messages", "Scrive in chat quando registra un acquisto all'asta o chiude un flip") {
+            new BoolSetting("tracker.messages", "Messaggi del tracker in chat", "Scrive in chat quando registra un acquisto all'asta o chiude un flip") {
                 boolean read(Config c) { return c.trackerMessages; }
                 void write(Config c, boolean v) { c.trackerMessages = v; }
             }),
         new Section("Fonti dati",
-            new BoolSetting("source.neu", "Usa i prezzi di NotEnoughUpdates (moulberry.codes)") {
+            new BoolSetting("source.neu", "Usa i prezzi di NEU", "Usa i prezzi di NotEnoughUpdates (moulberry.codes)") {
                 boolean read(Config c) { return c.sourceNeu; }
                 void write(Config c, boolean v) { c.sourceNeu = v; }
             },
-            new BoolSetting("source.coflnet", "Usa i prezzi di Coflnet (sky.coflnet.com) per confermare i flip") {
+            new BoolSetting("source.coflnet", "Usa i prezzi di Coflnet", "Usa i prezzi di Coflnet (sky.coflnet.com) per confermare i flip") {
                 boolean read(Config c) { return c.sourceCoflnet; }
                 void write(Config c, boolean v) { c.sourceCoflnet = v; }
             },
-            new UrlSetting("url.hypixel", "Indirizzo dell'API di Hypixel") {
+            new UrlSetting("url.hypixel", "Indirizzo API di Hypixel", "Indirizzo dell'API di Hypixel") {
                 String read(Config c) { return c.urlHypixel; }
                 void write(Config c, String v) { c.urlHypixel = v; }
             },
-            new UrlSetting("url.neu", "Indirizzo dei dati NEU") {
+            new UrlSetting("url.neu", "Indirizzo dei dati NEU", "Indirizzo dei dati NEU") {
                 String read(Config c) { return c.urlNeu; }
                 void write(Config c, String v) { c.urlNeu = v; }
             },
-            new UrlSetting("url.coflnet", "Indirizzo dell'API di Coflnet") {
+            new UrlSetting("url.coflnet", "Indirizzo API di Coflnet", "Indirizzo dell'API di Coflnet") {
                 String read(Config c) { return c.urlCoflnet; }
                 void write(Config c, String v) { c.urlCoflnet = v; }
             })));
@@ -425,8 +438,13 @@ public final class Config {
     // Setting kinds
 
     abstract static class BoolSetting extends Setting {
-        BoolSetting(String key, String help) {
-            super(key, help);
+        BoolSetting(String key, String label, String help) {
+            super(key, label, help);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.TOGGLE;
         }
 
         abstract boolean read(Config c);
@@ -452,9 +470,19 @@ public final class Config {
     abstract static class CoinsSetting extends Setting {
         private final long min;
 
-        CoinsSetting(String key, String help, long min) {
-            super(key, help);
+        CoinsSetting(String key, String label, String help, long min) {
+            super(key, label, help);
             this.min = min;
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.NUMBER;
+        }
+
+        @Override
+        public String hint() {
+            return "importo, es. 500k o 2m" + (min > 0 ? ", almeno " + Coins.compact(min) : "");
         }
 
         abstract long read(Config c);
@@ -485,10 +513,20 @@ public final class Config {
         private final double min;
         private final double max;
 
-        DecimalSetting(String key, String help, double min, double max) {
-            super(key, help);
+        DecimalSetting(String key, String label, String help, double min, double max) {
+            super(key, label, help);
             this.min = min;
             this.max = max;
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.NUMBER;
+        }
+
+        @Override
+        public String hint() {
+            return Coins.decimal(min, 3) + " - " + Coins.decimal(max, 3);
         }
 
         abstract double read(Config c);
@@ -519,10 +557,20 @@ public final class Config {
         private final int min;
         private final int max;
 
-        IntSetting(String key, String help, int min, int max) {
-            super(key, help);
+        IntSetting(String key, String label, String help, int min, int max) {
+            super(key, label, help);
             this.min = min;
             this.max = max;
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.NUMBER;
+        }
+
+        @Override
+        public String hint() {
+            return min + " - " + max;
         }
 
         abstract int read(Config c);
@@ -552,9 +600,23 @@ public final class Config {
     abstract static class ChoiceSetting extends Setting {
         private final List<String> choices;
 
-        ChoiceSetting(String key, String help, String... choices) {
-            super(key, help);
+        ChoiceSetting(String key, String label, String help, String... choices) {
+            super(key, label, help);
             this.choices = Arrays.asList(choices);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.CHOICE;
+        }
+
+        @Override
+        public String hint() {
+            StringBuilder sb = new StringBuilder();
+            for (String choice : choices) {
+                sb.append(sb.length() > 0 ? " / " : "").append(choice);
+            }
+            return sb.toString();
         }
 
         abstract String read(Config c);
@@ -582,8 +644,18 @@ public final class Config {
     }
 
     abstract static class UrlSetting extends Setting {
-        UrlSetting(String key, String help) {
-            super(key, help);
+        UrlSetting(String key, String label, String help) {
+            super(key, label, help);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.TEXT;
+        }
+
+        @Override
+        public String hint() {
+            return "indirizzo che inizia con https://";
         }
 
         abstract String read(Config c);
@@ -606,8 +678,18 @@ public final class Config {
     }
 
     abstract static class ListSetting extends Setting {
-        ListSetting(String key, String help) {
-            super(key, help);
+        ListSetting(String key, String label, String help) {
+            super(key, label, help);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.TEXT;
+        }
+
+        @Override
+        public String hint() {
+            return "ID separati da virgola";
         }
 
         abstract Set<String> read(Config c);
