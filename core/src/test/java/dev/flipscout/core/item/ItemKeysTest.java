@@ -40,13 +40,36 @@ class ItemKeysTest {
         List<String> expected = new ArrayList<String>(Arrays.asList(
             "RECOMBOBULATOR:RECOMBOBULATOR_3000x1", "HOT_POTATO_BOOK:HOT_POTATO_BOOKx10",
             "FUMING_POTATO_BOOK:FUMING_POTATO_BOOKx5", "ENCHANTMENT:ENCHANTMENT_ULTIMATE_WISE_5x1",
-            "ENCHANTMENT:ENCHANTMENT_GIANT_KILLER_7x1", "MASTER_STAR:FIRST_MASTER_STARx1",
-            "MASTER_STAR:SECOND_MASTER_STARx1", "MASTER_STAR:THIRD_MASTER_STARx1", "GEMSTONE:FINE_JASPER_GEMx1",
+            "ENCHANTMENT:ENCHANTMENT_GIANT_KILLER_7x1", "STARS:HYPERIONx8", "GEMSTONE:FINE_JASPER_GEMx1",
             "GEMSTONE:PERFECT_SAPPHIRE_GEMx1", "ABILITY_SCROLL:IMPLOSION_SCROLLx1",
             "ABILITY_SCROLL:SHADOW_WARP_SCROLLx1", "ART_OF_WAR:THE_ART_OF_WARx1", "ETHERWARP:ETHERWARP_MERGERx1",
             "ETHERWARP:ETHERWARP_CONDUITx1"));
         Collections.sort(expected);
         assertEquals(expected, parts(d.upgrades));
+    }
+
+    @Test
+    void newerUpgradeFormats() throws IOException {
+        String drill = TestData.itemBytes(map("id", "TITANIUM_DRILL_4", "engine", map("id", "AMBER_POLISHED_DRILL_ENGINE"),
+            "fuel_tank", map("id", "PERFECTLY_CUT_FUEL_TANK"), "drill_part_upgrade_module", "goblin_omelette_blue_cheese"),
+            null, 1);
+        assertEquals(Arrays.asList("DRILL_PART:AMBER_POLISHED_DRILL_ENGINEx1", "DRILL_PART:GOBLIN_OMELETTE_BLUE_CHEESEx1",
+            "DRILL_PART:PERFECTLY_CUT_FUEL_TANKx1"), parts(ItemKeys.decode(drill, null).upgrades));
+        String rod = TestData.itemBytes(map("id", "ROD_OF_THE_SEA", "line", map("part", "speedy_line", "uuid", "x"),
+            "hook", map("part", "hotspot_hook"), "wet_book_count", 5), null, 1);
+        assertEquals(Arrays.asList("ROD_PART:HOTSPOT_HOOKx1", "ROD_PART:SPEEDY_LINEx1", "WET_BOOK:WET_BOOKx5"),
+            parts(ItemKeys.decode(rod, null).upgrades));
+        String helmet = TestData.itemBytes(map("id", "SHADOW_ASSASSIN_HELMET", "skin", "SHADOW_ASSASSIN_ADMIRAL",
+            "divan_powder_coating", 1, "talisman_enrichment", "magic_find"), null, 1);
+        assertEquals(Arrays.asList("DIVAN_POWDER_COATING:DIVAN_POWDER_COATINGx1", "SKIN:SHADOW_ASSASSIN_ADMIRALx1",
+            "TALISMAN_ENRICHMENT:TALISMAN_ENRICHMENT_MAGIC_FINDx1"), parts(ItemKeys.decode(helmet, null).upgrades));
+    }
+
+    @Test
+    void partyHatsAreKeptApartByColourEmojiAndYear() throws IOException {
+        String hat = TestData.itemBytes(map("id", "PARTY_HAT_SLOTH", "party_hat_emoji", "tears", "party_hat_year", 2023),
+            null, 1);
+        assertEquals("PARTY_HAT_SLOTH[TEARS][2023]", ItemKeys.decode(hat, null).key.key);
     }
 
     @Test

@@ -21,8 +21,6 @@ import java.util.regex.Pattern;
 public final class ItemKeys {
     private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl (\\d+)]");
     private static final String[] TIERS = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"};
-    private static final String[] MASTER_STARS = {"FIRST_MASTER_STAR", "SECOND_MASTER_STAR", "THIRD_MASTER_STAR",
-        "FOURTH_MASTER_STAR", "FIFTH_MASTER_STAR"};
     private static final String[] GEM_QUALITIES = {"ROUGH", "FLAWED", "FINE", "FLAWLESS", "PERFECT"};
     /**
      * Enchantments the enchanting table gives up to level 5: at those levels their books are worth
@@ -149,12 +147,10 @@ public final class ItemKeys {
                 b.add(Upgrades.Kind.ENCHANTMENT, "ENCHANTMENT_" + name + "_" + level, 1);
             }
         }
-        // Stars 1-5 cost essence, 6-10 are master stars.
+        // What stars cost depends on the item: priced later from its upgrade costs.
         int stars = Math.max(NbtReader.intValue(extra.get("upgrade_level"), 0),
             NbtReader.intValue(extra.get("dungeon_item_level"), 0));
-        for (int i = 0; i < Math.min(stars - 5, MASTER_STARS.length); i++) {
-            b.add(Upgrades.Kind.MASTER_STAR, MASTER_STARS[i], 1);
-        }
+        b.add(Upgrades.Kind.STARS, id, stars);
         gems(b, NbtReader.compound(extra.get("gems")));
         for (Object scroll : NbtReader.list(extra.get("ability_scroll"))) {
             b.add(Upgrades.Kind.ABILITY_SCROLL, NbtReader.string(scroll), 1);
@@ -176,9 +172,25 @@ public final class ItemKeys {
         }
         b.add(Upgrades.Kind.POWER_SCROLL, NbtReader.string(extra.get("power_ability_scroll")), 1);
         b.add(Upgrades.Kind.DYE, NbtReader.string(extra.get("dye_item")), 1);
+        // Drill parts: "drill_part_engine": "titanium_drill_engine", or newer "engine": {"id": "..."}.
         for (String part : new String[] {"drill_part_upgrade_module", "drill_part_fuel_tank", "drill_part_engine"}) {
             b.add(Upgrades.Kind.DRILL_PART, NbtReader.string(extra.get(part)), 1);
         }
+        for (String part : new String[] {"upgrade_module", "fuel_tank", "engine"}) {
+            b.add(Upgrades.Kind.DRILL_PART, NbtReader.string(NbtReader.compound(extra.get(part)).get("id")), 1);
+        }
+        // Fishing rod parts: "line": {"part": "speedy_line", ...}.
+        for (String part : new String[] {"line", "sinker", "hook"}) {
+            b.add(Upgrades.Kind.ROD_PART, NbtReader.string(NbtReader.compound(extra.get(part)).get("part")), 1);
+        }
+        b.add(Upgrades.Kind.SKIN, NbtReader.string(extra.get("skin")), 1);
+        b.add(Upgrades.Kind.DIVAN_POWDER_COATING, "DIVAN_POWDER_COATING",
+            NbtReader.intValue(extra.get("divan_powder_coating"), 0));
+        String enrichment = NbtReader.string(extra.get("talisman_enrichment"));
+        if (enrichment != null) {
+            b.add(Upgrades.Kind.TALISMAN_ENRICHMENT, "TALISMAN_ENRICHMENT_" + enrichment, 1);
+        }
+        b.add(Upgrades.Kind.WET_BOOK, "WET_BOOK", NbtReader.intValue(extra.get("wet_book_count"), 0));
         return b.build();
     }
 
@@ -317,10 +329,14 @@ public final class ItemKeys {
             key.append('[').append(NbtReader.intValue(extra.get("new_years_cake"), 0)).append(']');
             exact = false;
         }
-        String color = upper(NbtReader.string(extra.get("party_hat_color")));
-        if (color != null) {
-            key.append('[').append(color).append(']');
-            exact = false;
+        // Party hats differ by colour, emoji and year.
+        for (String field : new String[] {"party_hat_color", "party_hat_emoji", "party_hat_year"}) {
+            Object value = extra.get(field);
+            String text = value instanceof Number ? String.valueOf(((Number) value).intValue()) : upper(NbtReader.string(value));
+            if (text != null) {
+                key.append('[').append(text).append(']');
+                exact = false;
+            }
         }
         // NEU's lowest BIN for the bare id is still a valid lower bound, so neuKey stays set.
         return new ItemKey(id, key.toString(), id, exact, exact ? id : null, exact ? id : null);

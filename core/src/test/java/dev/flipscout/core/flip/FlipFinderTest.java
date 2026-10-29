@@ -14,6 +14,7 @@ import dev.flipscout.core.market.BazaarHistory;
 import dev.flipscout.core.market.CoflnetSource;
 import dev.flipscout.core.market.PriceService;
 import dev.flipscout.core.market.SalesHistory;
+import dev.flipscout.core.market.Valuation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -96,10 +97,29 @@ class FlipFinderTest {
             NOW + 3_600_000L, NOW, 1, ItemKeys.upgrades("HYPERION", extra));
     }
 
+    /** Hyperion stars cost 150, 300, 500, 900 and 1,500 Wither essence; a crimson helmet has ten levels. */
+    private void starCosts() {
+        ItemCatalog.StarCost[][] hyperion = new ItemCatalog.StarCost[5][];
+        int[] amounts = {150, 300, 500, 900, 1500};
+        for (int i = 0; i < 5; i++) {
+            hyperion[i] = new ItemCatalog.StarCost[] {new ItemCatalog.StarCost("ESSENCE_WITHER", amounts[i])};
+        }
+        ItemCatalog.StarCost[][] crimson = new ItemCatalog.StarCost[10][];
+        for (int i = 0; i < 10; i++) {
+            crimson[i] = new ItemCatalog.StarCost[] {new ItemCatalog.StarCost("ESSENCE_CRIMSON", 1000)};
+        }
+        Map<String, ItemCatalog.Info> infos = new HashMap<String, ItemCatalog.Info>();
+        infos.put("HYPERION", new ItemCatalog.Info("HYPERION", "Hyperion", "LEGENDARY", 0, hyperion, true));
+        infos.put("CRIMSON_HELMET", new ItemCatalog.Info("CRIMSON_HELMET", "Crimson Helmet", "LEGENDARY", 0, crimson, false));
+        prices.setCatalog(new ItemCatalog(infos));
+    }
+
     @Test
     void upgradesAreCountedBeyondThoseOfTheCheapestListing() throws IOException {
         hyperionMarket();
+        starCosts();
         prices.setBazaar(snapshot(
+            TestData.product("ESSENCE_WITHER", new double[][] {{2_100, 5}}, new double[][] {{2_000, 5}}, 1000, 1000),
             TestData.product("RECOMBOBULATOR_3000", new double[][] {{11_000_000, 5}}, new double[][] {{10_000_000, 5}},
                 1000, 1000),
             TestData.product("FIRST_MASTER_STAR", new double[][] {{21_000_000, 5}}, new double[][] {{20_000_000, 5}},
@@ -114,31 +134,60 @@ class FlipFinderTest {
         config.ahUpgrades = false;
         assertNull(finder.evaluate(listing, false));
 
-        // ...but its recombobulator and three master stars are worth 0.8 x 10M + 20M + 40M + 80M = 148M,
-        // 80% of which counts: 118.4M.
+        // ...but its upgrades are worth 0.8 x 10M (recombobulator) + 0.75 x 3,350 x 2,000 (five stars of
+        // essence) + 20M + 40M + 80M (three master stars) = 153.025M, 80% of which counts: 122.42M.
         config.ahUpgrades = true;
         AuctionFlip flip = finder.evaluate(listing, false);
         assertNotNull(flip);
         assertTrue(flip.upgradeOnly);
-        assertEquals(118_400_000, flip.valuation.upgradeExtra, 1);
-        assertEquals(895_000_000 + 118_400_000, flip.resale, 1);
-        assertEquals(4, flip.valuation.upgradeParts.size());
+        assertEquals(122_420_000, flip.valuation.upgradeExtra, 1);
+        assertEquals(895_000_000 + 122_420_000, flip.resale, 1);
+        assertEquals(2, flip.valuation.upgradeParts.size());
 
-        // When the cheapest other Hyperion has the same upgrades, they are already in its price.
+        // When the cheapest other Hyperion has the same upgrades, they are already in its price...
         index.add(upgraded("a0", 880_000_000L, extra));
         assertNull(finder.evaluate(listing, false));
+        // ...and a plain one is worth that much less than it: 800M is not cheap after all.
+        config.ahUpgrades = false;
+        AuctionIndex.Listing plain = listing("plain", HYPERION, 800_000_000L, 1);
+        assertNotNull(finder.evaluate(plain, false));
+        config.ahUpgrades = true;
+        assertNull(finder.evaluate(plain, false));
+        assertEquals(880_000_000 - 122_420_000, prices.valuate(HYPERION, "plain", 800_000_000, false).value
+            + upgradeAdjustment(plain), 1);
+    }
+
+    private double upgradeAdjustment(AuctionIndex.Listing listing) {
+        Valuation v = prices.valuate(listing.key, listing.uuid, listing.unitPrice, false);
+        return prices.addUpgrades(v, listing, config.ahUpgradePercent / 100.0);
     }
 
     @Test
-    void singleReferenceNeedsTwiceTheMargin() {
+    void crimsonStarsAreNotMasterStars() throws IOException {
+        starCosts();
+        prices.setBazaar(snapshot(
+            TestData.product("ESSENCE_CRIMSON", new double[][] {{1_100, 5}}, new double[][] {{1_000, 5}}, 1000, 1000),
+            TestData.product("FIRST_MASTER_STAR", new double[][] {{21_000_000, 5}}, new double[][] {{20_000_000, 5}},
+                1000, 1000)));
+        // Eight crimson stars: eight levels of 1,000 essence at 1,000 each, counted at 75%.
+        assertEquals(8 * 1_000 * 1_000 * 0.75,
+            prices.upgradeValue(ItemKeys.upgrades("CRIMSON_HELMET", TestData.map("upgrade_level", 8)), null), 1e-6);
+    }
+
+    @Test
+    void singleReferenceNeedsTwiceTheMarginAndEnoughListings() {
         index.add(listing("a1", HYPERION, 900_000_000L, 1));
-        AuctionIndex.Listing slightlyCheap = listing("new", HYPERION, 800_000_000L, 1);
-        // 900M - 31.5M fees - 800M = 68.5M = 8.6%: enough with two references, not with one.
-        assertNull(finder.evaluate(slightlyCheap, false));
         AuctionIndex.Listing veryCheap = listing("new2", HYPERION, 700_000_000L, 1);
+        // One other listing could just be overpriced.
+        assertNull(finder.evaluate(veryCheap, false));
+        index.add(listing("a2", HYPERION, 950_000_000L, 1));
+        index.add(listing("a3", HYPERION, 990_000_000L, 1));
         AuctionFlip flip = finder.evaluate(veryCheap, false);
         assertNotNull(flip);
         assertTrue(flip.weak);
+        // 900M - 31.5M fees - 800M = 68.5M = 8.6%: enough with two references, not with one.
+        AuctionIndex.Listing slightlyCheap = listing("new", HYPERION, 800_000_000L, 1);
+        assertNull(finder.evaluate(slightlyCheap, false));
     }
 
     @Test
@@ -180,7 +229,8 @@ class FlipFinderTest {
         assertTrue(Double.isNaN(prices.valuate(HYPERION, "new", 800_000_000, false).neuLbin));
         lbin.put("HYPERION", 1_000_000_000.0);
         assertEquals(1_000_000_000.0, prices.valuate(HYPERION, "new", 800_000_000, false).neuLbin, 1e-3);
-        assertNotNull(finder.evaluate(cheap, false));
+        // NEU's lowest BIN alone, with no other listing of ours, is not enough for a flip.
+        assertNull(finder.evaluate(cheap, false));
     }
 
     @Test
@@ -240,6 +290,26 @@ class FlipFinderTest {
         assertEquals(margin, flip.margin, 1e-6);
         assertEquals(margin * 800, flip.profit, 1e-6);
         assertEquals("/bz Good", flip.command());
+    }
+
+    @Test
+    void orderFlipsSkipHeldUpPrices() throws IOException {
+        config.bzCrashEnabled = false;
+        config.bzNpcEnabled = false;
+        BazaarFlipFinder finder = new BazaarFlipFinder(config);
+        BazaarSnapshot heldUp = snapshot(TestData.product("HELD", new double[][] {{250_000, 10}},
+            new double[][] {{24_000, 10}}, 168 * 1000, 168 * 800));
+        // No history yet: a 900% margin is not trusted.
+        assertTrue(finder.find(heldUp, new BazaarHistory(), ItemCatalog.EMPTY, NOW).isEmpty());
+        BazaarSnapshot usual = snapshot(TestData.product("HELD", new double[][] {{30_000, 10}},
+            new double[][] {{24_000, 10}}, 168 * 1000, 168 * 800));
+        BazaarHistory history = new BazaarHistory();
+        for (int i = 60; i >= 3; i--) {
+            history.record(usual, NOW - i * 60_000L);
+        }
+        // It usually sells around 30k: offered at 250k now, someone is holding the price up.
+        assertTrue(finder.find(heldUp, history, ItemCatalog.EMPTY, NOW).isEmpty());
+        assertEquals(1, finder.find(usual, history, ItemCatalog.EMPTY, NOW).size());
     }
 
     @Test

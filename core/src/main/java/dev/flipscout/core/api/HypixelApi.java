@@ -4,6 +4,7 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import dev.flipscout.core.http.HttpFetcher;
 import dev.flipscout.core.json.Json;
+import dev.flipscout.core.json.JsonTree;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -431,10 +432,16 @@ public final class HypixelApi {
         String name = null;
         String tier = null;
         double npc = 0;
+        ItemCatalog.StarCost[][] upgradeCosts = null;
+        boolean dungeonItem = false;
         in.beginObject();
         while (in.hasNext()) {
             String field = in.nextName();
-            if ("id".equals(field)) {
+            if ("upgrade_costs".equals(field) && in.peek() == JsonToken.BEGIN_ARRAY) {
+                upgradeCosts = readUpgradeCosts(JsonTree.arr(JsonTree.read(in)));
+            } else if ("dungeon_item".equals(field)) {
+                dungeonItem = Json.readBoolean(in, false);
+            } else if ("id".equals(field)) {
                 id = Json.readString(in);
             } else if ("name".equals(field)) {
                 name = Json.readString(in);
@@ -447,7 +454,27 @@ public final class HypixelApi {
             }
         }
         in.endObject();
-        return id == null ? null : new ItemCatalog.Info(id, name, tier, npc);
+        return id == null ? null : new ItemCatalog.Info(id, name, tier, npc, upgradeCosts, dungeonItem);
+    }
+
+    /** [[{"type":"ESSENCE","essence_type":"WITHER","amount":10}, {"type":"ITEM","item_id":"X","amount":2}], ...] */
+    private static ItemCatalog.StarCost[][] readUpgradeCosts(List<Object> levels) {
+        ItemCatalog.StarCost[][] out = new ItemCatalog.StarCost[levels.size()][];
+        for (int i = 0; i < out.length; i++) {
+            List<ItemCatalog.StarCost> costs = new ArrayList<ItemCatalog.StarCost>();
+            for (Object o : JsonTree.arr(levels.get(i))) {
+                Map<String, Object> cost = JsonTree.obj(o);
+                String type = JsonTree.str(cost.get("type"));
+                String item = "ESSENCE".equals(type) ? "ESSENCE_" + JsonTree.str(cost.get("essence_type"))
+                    : JsonTree.str(cost.get("item_id"));
+                int amount = (int) JsonTree.num(cost.get("amount"), 0);
+                if (item != null && !item.endsWith("_null") && amount > 0) {
+                    costs.add(new ItemCatalog.StarCost(item.intern(), amount));
+                }
+            }
+            out[i] = costs.toArray(new ItemCatalog.StarCost[0]);
+        }
+        return out;
     }
 
     private HttpFetcher.Response get(String path) throws IOException {

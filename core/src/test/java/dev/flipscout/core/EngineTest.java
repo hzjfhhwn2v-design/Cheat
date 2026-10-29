@@ -341,7 +341,9 @@ class EngineTest {
         config.sourceCoflnet = true;
         ManualExecutor background = new ManualExecutor();
         engine.useExecutors(null, background);
-        http.put(PAGE0, TestData.auctionPage(0, 1, T0, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L)));
+        // No sales of our own: the lowest BIN alone counts once there are a few other listings.
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0, hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L), hyperion("a3", "s3", 920_000_000L, T0 - 3_600_000L)));
         http.put(ENDED, TestData.endedPage(T0));
         engine.tick();
         background.runAll();
@@ -349,6 +351,7 @@ class EngineTest {
         long t1 = T0 + 60_000;
         http.put(PAGE0, TestData.auctionPage(0, 1, t1,
             hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L), hyperion("a3", "s3", 920_000_000L, T0 - 3_600_000L),
             hyperion("new", "s4", 700_000_000L, t1 - 10_000)));
         clock.set(t1 + 1_000);
         engine.tick();

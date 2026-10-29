@@ -84,6 +84,18 @@ class ProfitTrackerTest {
     }
 
     @Test
+    void flippedBuyOrdersAreBoughtAtTheOrderPrice() {
+        chat("[Bazaar] Buy Order Setup! 160x Enchanted Coal for 10,240.0 coins.");
+        chat("[Bazaar] Order Flipped! 160x Enchanted Coal for 1,500.0 coins of total expected profit.");
+        assertEquals(1, tracker.lots().size());
+        assertEquals(64, tracker.lots().get(0).unitCost, 1e-9);
+        // Sometimes the claim does not say how many: 11,700 / 73.1 is 160.
+        chat("[Bazaar] Claimed 11,700 coins from selling Enchanted Coal at 73.1 each!");
+        assertEquals(11_700 - 10_240, tracker.total().profit, 1e-6);
+        assertTrue(tracker.lots().isEmpty());
+    }
+
+    @Test
     void salesWithoutAPurchaseAreNotProfit() {
         chat("[Bazaar] Sold 64x Wheat for 100 coins!");
         assertEquals(0, tracker.total().profit, 1e-9);

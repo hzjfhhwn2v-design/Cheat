@@ -15,6 +15,10 @@ import java.util.List;
 public final class BazaarFlipFinder {
     /** Bazaar price step: orders are placed one tenth of a coin above/below the best one. */
     private static final double STEP = 0.1;
+    /** Order flips are skipped when the sell price is this far above its usual (90-minute) level... */
+    private static final double MAX_ABOVE_USUAL = 1.25;
+    /** ...or, before there is history, when the margin is above this percentage. */
+    private static final double MAX_MARGIN_WITHOUT_HISTORY = 100;
 
     private static final Comparator<BazaarFlip> BY_PROFIT = new Comparator<BazaarFlip>() {
         @Override
@@ -42,7 +46,7 @@ public final class BazaarFlipFinder {
                 continue;
             }
             if (config.bzFlipEnabled) {
-                BazaarFlip flip = orderFlip(product, items, tax);
+                BazaarFlip flip = orderFlip(product, history.baselineInstaBuy(product.id, now), items, tax);
                 if (flip != null) {
                     out.add(flip);
                 }
@@ -64,7 +68,7 @@ public final class BazaarFlipFinder {
         return out;
     }
 
-    private BazaarFlip orderFlip(BazaarProduct product, ItemCatalog items, double tax) {
+    private BazaarFlip orderFlip(BazaarProduct product, double baseline, ItemCatalog items, double tax) {
         double instaBuy = product.instaBuy();
         double instaSell = product.instaSell();
         if (!(instaSell > 0)) {
@@ -77,6 +81,11 @@ public final class BazaarFlipFinder {
             return null;
         }
         double marginPercent = margin * 100.0 / buyAt;
+        // A sell price far above its usual level usually means someone bought out the cheap offers to
+        // hold the market up: offers at that price rarely fill. Without history, distrust huge margins.
+        if (baseline > 0 ? instaBuy > baseline * MAX_ABOVE_USUAL : marginPercent > MAX_MARGIN_WITHOUT_HISTORY) {
+            return null;
+        }
         double flow = Math.min(product.instaBuysPerHour(), product.instaSellsPerHour());
         double perHour = margin * flow;
         if (marginPercent < config.bzFlipMinMarginPercent || flow < config.bzFlipMinHourlyVolume

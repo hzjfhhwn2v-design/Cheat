@@ -66,9 +66,14 @@ final class Notifier {
                 h.append("§7  Mediana Coflnet: §f").append(Coins.compact(v.coflMedian)).append('\n');
             }
         }
-        if (v.upgradeExtra > 0) {
+        if (v.upgradeExtra < 0) {
+            h.append("§7Meno upgrade del BIN di riferimento: §c").append(Coins.compact(v.upgradeExtra))
+                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% della differenza)\n");
+        } else if (v.upgradeExtra > 0) {
             h.append("§7Upgrade contati: §b+").append(Coins.compact(v.upgradeExtra))
                 .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% del loro valore)\n");
+        }
+        if (v.upgradeExtra != 0) {
             int shown = 0;
             for (Valuation.Part part : v.upgradeParts) {
                 if (shown++ == 6) {

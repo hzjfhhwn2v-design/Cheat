@@ -15,7 +15,11 @@ final class TradeParser {
         /** Instant buy, or a filled buy order claimed. */
         BAZAAR_BOUGHT,
         /** Instant sell, or a filled sell offer claimed. */
-        BAZAAR_SOLD
+        BAZAAR_SOLD,
+        /** A buy order placed: remembered for the price of items later flipped straight into a sell offer. */
+        BAZAAR_ORDER_PLACED,
+        /** A filled buy order turned straight into a sell offer: bought at the order's price. */
+        BAZAAR_ORDER_FLIPPED
     }
 
     static final class Trade {
@@ -48,8 +52,13 @@ final class TradeParser {
         Pattern.compile("\\[Bazaar\\] Sold " + NUMBER + "x (.+) for " + NUMBER + " coins!");
     private static final Pattern BAZAAR_ORDER_CLAIMED = Pattern.compile(
         "\\[Bazaar\\] Claimed " + NUMBER + "x (.+) worth " + NUMBER + " coins bought for " + NUMBER + " each!");
+    /** The amount is sometimes missing: "Claimed 1,234 coins from selling Coal at 4.2 each!". */
     private static final Pattern BAZAAR_OFFER_CLAIMED = Pattern.compile(
-        "\\[Bazaar\\] Claimed " + NUMBER + " coins from selling " + NUMBER + "x (.+) at " + NUMBER + " each!");
+        "\\[Bazaar\\] Claimed " + NUMBER + " coins from selling (?:([0-9][0-9,]*)x )?(.+) at " + NUMBER + " each!");
+    private static final Pattern BAZAAR_ORDER_PLACED =
+        Pattern.compile("\\[Bazaar\\] Buy Order Setup! " + NUMBER + "x (.+) for " + NUMBER + " coins\\.?");
+    private static final Pattern BAZAAR_ORDER_FLIPPED = Pattern.compile(
+        "\\[Bazaar\\] Order Flipped! " + NUMBER + "x (.+) for " + NUMBER + " coins of total expected profit\\.?");
     private static final Pattern COUNT_BEFORE = Pattern.compile("([0-9][0-9,]*)x (.+)");
     private static final Pattern COUNT_AFTER = Pattern.compile("(.+) x([0-9][0-9,]*)");
 
@@ -81,7 +90,17 @@ final class TradeParser {
             return new Trade(Kind.BAZAAR_SOLD, m.group(2), count(m.group(1)), number(m.group(3)), null);
         }
         if ((m = BAZAAR_OFFER_CLAIMED.matcher(line)).matches()) {
-            return new Trade(Kind.BAZAAR_SOLD, m.group(3), count(m.group(2)), number(m.group(1)), null);
+            double coins = number(m.group(1));
+            double each = number(m.group(4));
+            int amount = m.group(2) != null ? count(m.group(2)) : (int) Math.max(1, Math.round(coins / each));
+            return new Trade(Kind.BAZAAR_SOLD, m.group(3), amount, coins, null);
+        }
+        if ((m = BAZAAR_ORDER_PLACED.matcher(line)).matches()) {
+            return new Trade(Kind.BAZAAR_ORDER_PLACED, m.group(2), count(m.group(1)), number(m.group(3)), null);
+        }
+        if ((m = BAZAAR_ORDER_FLIPPED.matcher(line)).matches()) {
+            // The coins here are the expected profit, not the price.
+            return new Trade(Kind.BAZAAR_ORDER_FLIPPED, m.group(2), count(m.group(1)), 0, null);
         }
         return null;
     }

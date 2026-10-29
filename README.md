@@ -13,7 +13,7 @@ Disponibile per **Forge 1.8.9** e per **Fabric** dalla 1.21.7 alla 26.3 (con Fab
 | Tipo | Quando arriva la notifica |
 |---|---|
 | **AH** | Un'asta BIN appena messa in vendita costa meno di quanto l'oggetto si rivende, al netto delle tasse, con il profitto e la percentuale minimi che hai impostato. |
-| **BZ flip** | Mettendo un buy order e una sell offer il margine dopo la tassa è alto e il prodotto si scambia abbastanza all'ora. |
+| **BZ flip** | Mettendo un buy order e una sell offer il margine dopo la tassa è alto e il prodotto si scambia abbastanza all'ora. Se il prezzo di vendita è oltre il 25% sopra il solito (qualcuno tiene il prezzo alto) il flip viene scartato; nei primi 15 minuti, senza storico, si scartano i margini sopra il 100%. |
 | **BZ crollo** | Il prezzo di acquisto istantaneo è sceso molto sotto la mediana dell'ultima ora e mezza (qualcuno ha svenduto). |
 | **BZ→NPC** | Comprare al bazaar e rivendere a un NPC rende. |
 
@@ -31,19 +31,19 @@ L'ultima parte della riga AH (`4s`) dice da quanto tempo l'asta è in vendita.
 
 ## Quanto è veloce
 
-L'API di Hypixel pubblica le aste nuove **una volta al minuto**: nessun mod che usa l'API può vederle prima di
-quell'aggiornamento. FlipScout cerca di non aggiungere ritardi suoi:
+L'API di Hypixel prepara le aste nuove **ogni 60 secondi** e le pubblica circa **8 secondi dopo** (misurato): nessun mod
+che usa l'API può vederle prima. FlipScout cerca di non aggiungere ritardi suoi:
 
-- poco prima dell'aggiornamento previsto chiede ogni mezzo secondo se è uscito, tenendo conto della differenza tra
-  l'orologio del PC e quello di Hypixel. Finché non è cambiato legge solo l'inizio della risposta e la chiude;
-- appena esce legge le prime pagine, dove finiscono le aste nuove, e ti avvisa subito: di solito entro un secondo circa;
-- la scansione completa delle aste, le vendite, il bazaar e le richieste a Coflnet vanno in parallelo e non bloccano
-  gli avvisi. Solo quando un flip si basa su un unico prezzo il mod chiede prima conferma a Coflnet (di solito meno di
-  un secondo).
+- impara quando Hypixel pubblica e controlla proprio in quel momento, tenendo conto della differenza tra l'orologio
+  del PC e quello di Hypixel. Finché non è cambiato legge solo l'inizio della risposta e la chiude;
+- appena esce legge le prime pagine, dove finiscono le aste nuove, e ti avvisa subito: di solito entro un secondo;
+- la scansione completa delle aste (45 pagine in circa 3 secondi), le vendite, il bazaar e le richieste a Coflnet vanno
+  in parallelo e non bloccano gli avvisi. Solo quando un flip si basa su un unico prezzo il mod chiede prima conferma a
+  Coflnet (di solito meno di un secondo).
 
-In pratica un'asta ti arriva in chat tra 1 e 60 secondi circa dopo la messa in vendita, a seconda di quando cade
-rispetto all'aggiornamento di Hypixel. Chi guarda l'asta in gioco la vede subito, quindi i flip più evidenti a volte
-spariscono prima che tu clicchi.
+In pratica un'asta ti arriva in chat tra 9 e 70 secondi circa dopo la messa in vendita (in media una quarantina), a
+seconda di quando cade rispetto all'aggiornamento di Hypixel. `/flipscout status` mostra il ritardo misurato. Chi
+guarda l'asta in gioco la vede subito, quindi i flip più evidenti a volte spariscono prima che tu clicchi.
 
 ## Installazione
 
@@ -148,29 +148,35 @@ Fonti:
 
 Il valore di un oggetto (strategia `conservative`) è il **minore** tra il BIN più basso degli *altri* venditori e la
 mediana delle vendite recenti: un oggetto vale quanto si vende, ma non più di quanto lo si può comprare. Se c'è un solo
-riferimento serve il doppio della percentuale minima e la notifica ha un ⚠. Un oggetto del bazaar messo all'asta viene
-valutato al prezzo di vendita istantanea del bazaar.
+riferimento serve il doppio della percentuale minima e la notifica ha un ⚠; se quel riferimento è il BIN più basso,
+servono anche almeno 3 altre aste dello stesso oggetto, perché con una o due spesso è solo un prezzo esagerato. Un
+oggetto del bazaar messo all'asta viene valutato al prezzo di vendita istantanea del bazaar.
 
 Per non confrontare cose diverse: i pet sono raggruppati per tipo, rarità e fascia di livello (e skin), i libri per
 incantesimo e livello, le rune per tipo e livello, le armature con attributi per combinazione di attributi.
 
 **Upgrade.** Un'arma piena di upgrade messa al prezzo di una base è un'occasione. Il mod riconosce:
 
-- recombobulator, hot e fuming potato book, master star;
+- recombobulator, hot e fuming potato book;
+- stelle: quelle a essenza (e oggetti) secondo i costi che Hypixel pubblica per ogni oggetto, e le master star dopo la
+  quinta stella degli oggetti da dungeon. Le stelle in più delle armature del Crimson Isle si pagano con essenza
+  crimson, non con master star;
 - incantesimi che non vengono dal tavolo, gemme;
 - pergamene della Necron's Blade, Art of War e Art of Peace, Wood Singularity, Farming for Dummies, Transmission
   Tuner e simili;
-- tinture, parti dei trapani, oggetti tenuti dai pet.
+- tinture, skin applicate, parti dei trapani e delle canne da pesca, oggetti tenuti dai pet.
 
 Ogni pezzo vale il suo prezzo (vendita istantanea al bazaar, altrimenti all'asta) per una percentuale che dipende dal
-tipo: 100% per master star, gemme e pergamene, 80% per il recombobulator, 85% per gli incantesimi, e così via.
+tipo: 100% per master star, gemme e pergamene, 85% per gli incantesimi, 80% per il recombobulator, 75% per l'essenza
+delle stelle, e così via.
 
-- **Cosa conta:** solo la differenza rispetto agli upgrade dell'asta più economica dello stesso oggetto, e di questa
-  solo l'80% (`ah.upgradePercent`). Gli upgrade possono al massimo raddoppiare il valore.
+- **Cosa conta:** la differenza rispetto agli upgrade dell'asta più economica dello stesso oggetto, e di questa solo
+  l'80% (`ah.upgradePercent`). Gli upgrade possono al massimo raddoppiare il valore.
+- **Anche in meno:** se l'asta più economica ha più upgrade di quella che stai guardando, il valore scende (fino alla
+  metà), così un oggetto base non sembra un affare solo perché le altre aste sono potenziate.
 - **Più margine se serve:** se un'asta è un flip solo grazie agli upgrade, serve il doppio della percentuale minima e la
   notifica dice `+upgrade`.
 - **Dettagli:** passando il mouse vedi i pezzi contati.
-- **Cosa non conta:** le stelle normali (quelle a essenza).
 
 ## Guadagni
 
@@ -182,7 +188,8 @@ Il mod legge i messaggi di Hypixel in chat e tiene il conto di quello che compri
   - "You collected … coins from selling …" quando ritiri i coins, anche per le vendite fatte mentre eri offline.
 
   Ogni vendita conta una volta sola.
-- **Bazaar:** acquisti e vendite istantanee, buy order e sell offer quando li ritiri.
+- **Bazaar:** acquisti e vendite istantanee, buy order e sell offer quando li ritiri, e i buy order "flippati"
+  direttamente in sell offer (al prezzo del buy order).
 
 Ogni vendita viene abbinata all'acquisto più vecchio dello stesso oggetto, anche se nel frattempo l'hai riforgiato. Il
 profitto è l'incasso dopo le tasse meno quanto l'avevi pagato. Le vendite di cose che non hai comprato (drop, farming)

@@ -467,6 +467,11 @@ final class Commands {
             line("Ultima scansione completa", "mai");
         }
         line("Controllo aste nuove", Text.ago(now, s.lastAuctionPoll));
+        if (s.lastRefreshDelay > 0) {
+            line("Ultimo aggiornamento", "visto " + Coins.decimal(s.lastRefreshDelay / 1000.0, 1)
+                + " s dopo che Hypixel l'ha preparato §8(di solito lo pubblica dopo "
+                + Coins.decimal(s.publishDelay / 1000.0, 1) + " s)");
+        }
         line("Vendite registrate", Coins.full(engine.sales.sampleCount()) + " §8(" + Coins.full(engine.sales.keyCount())
             + " oggetti, " + Text.duration(engine.sales.observedMinutes() * 60_000L) + " di dati)");
         BazaarSnapshot bazaar = engine.prices.bazaar();

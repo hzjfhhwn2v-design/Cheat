@@ -14,6 +14,9 @@ public final class Status {
     public volatile int fullScanAuctions;
     public volatile long fullScanMillis;
     public volatile long lastAuctionPoll;
+    /** How long after Hypixel prepared it the last auction refresh was seen, and the usual delay. */
+    public volatile long lastRefreshDelay;
+    public volatile long publishDelay;
     public volatile long lastEndedPoll;
     public volatile long lastBazaarPoll;
     public volatile long lastNeu;

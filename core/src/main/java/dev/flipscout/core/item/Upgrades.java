@@ -20,7 +20,11 @@ public final class Upgrades {
         HOT_POTATO_BOOK(1.0),
         FUMING_POTATO_BOOK(0.6),
         ENCHANTMENT(0.85),
-        MASTER_STAR(1.0),
+        /**
+         * Stars, as the part's count with the item's own id: what they cost depends on the item
+         * (essence for the first ones, master stars after the fifth on dungeon items).
+         */
+        STARS(1.0),
         GEMSTONE(1.0),
         ABILITY_SCROLL(1.0),
         ART_OF_WAR(0.6),
@@ -35,6 +39,11 @@ public final class Upgrades {
         POWER_SCROLL(0.5),
         DYE(0.9),
         DRILL_PART(1.0),
+        ROD_PART(1.0),
+        SKIN(0.9),
+        DIVAN_POWDER_COATING(0.8),
+        TALISMAN_ENRICHMENT(0.5),
+        WET_BOOK(0.8),
         PET_ITEM(1.0);
 
         public final double weight;
@@ -56,8 +65,11 @@ public final class Upgrades {
             this.count = count;
         }
 
-        /** "Recombobulator 3000", "10x Hot Potato Book", "Ultimate Wise V". */
+        /** "Recombobulator 3000", "10x Hot Potato Book", "Ultimate Wise V", "8 stelle". */
         public String label() {
+            if (kind == Kind.STARS) {
+                return count == 1 ? "1 stella" : count + " stelle";
+            }
             String name;
             if (kind == Kind.ENCHANTMENT && id.startsWith("ENCHANTMENT_")) {
                 String rest = id.substring("ENCHANTMENT_".length());
@@ -72,6 +84,12 @@ public final class Upgrades {
             return count > 1 ? count + "x " + name : name;
         }
     }
+
+    /** Master stars in the order they are applied, after the fifth star of a dungeon item. */
+    public static final String[] MASTER_STARS = {"FIRST_MASTER_STAR", "SECOND_MASTER_STAR", "THIRD_MASTER_STAR",
+        "FOURTH_MASTER_STAR", "FIFTH_MASTER_STAR"};
+    /** Share of the essence and items spent on stars that a starred item is worth more. */
+    public static final double STAR_COST_WEIGHT = 0.75;
 
     private static final Part[] NO_PARTS = new Part[0];
     /** Listings share part objects: the same few upgrades appear on thousands of them. */

@@ -16,12 +16,34 @@ public final class ItemCatalog {
         public final String tier;
         /** Coins an NPC pays for one item, 0 when it cannot be sold to NPCs. */
         public final double npcSellPrice;
+        /** What each star costs (index 0 = first star), or null when the item has no stars. */
+        public final StarCost[][] upgradeCosts;
+        /** Dungeon items take master stars after their fifth star. */
+        public final boolean dungeonItem;
 
         public Info(String id, String name, String tier, double npcSellPrice) {
+            this(id, name, tier, npcSellPrice, null, false);
+        }
+
+        public Info(String id, String name, String tier, double npcSellPrice, StarCost[][] upgradeCosts,
+                    boolean dungeonItem) {
             this.id = id;
             this.name = name;
             this.tier = tier;
             this.npcSellPrice = npcSellPrice;
+            this.upgradeCosts = upgradeCosts;
+            this.dungeonItem = dungeonItem;
+        }
+    }
+
+    /** {@code amount} of item {@code id} (essences as ESSENCE_WITHER and so on). */
+    public static final class StarCost {
+        public final String id;
+        public final int amount;
+
+        public StarCost(String id, int amount) {
+            this.id = id;
+            this.amount = amount;
         }
     }
 

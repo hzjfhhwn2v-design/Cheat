@@ -174,6 +174,11 @@ public final class Engine {
     private volatile boolean initialScanDone;
     /** Local clock minus Hypixel's, from the Date header of the last auction page. */
     private volatile long clockSkew;
+    /**
+     * How long after its lastUpdated a refresh shows up in the API (about 8s when measured),
+     * learned from the refreshes we were waiting for; 0 until then.
+     */
+    private volatile long publishDelay;
     private volatile ScheduledExecutorService scheduler;
     private volatile ExecutorService scanPool;
     private volatile ExecutorService backgroundPool;
@@ -399,7 +404,7 @@ public final class Engine {
         if (first.lastUpdated > lastAuctionsUpdate) {
             lastAuctionsUpdate = first.lastUpdated;
         }
-        nextAuctionPoll = expectedNextUpdate(first.lastUpdated, first.serverDate, clock.getAsLong());
+        nextAuctionPoll = expectedNextUpdate(first.lastUpdated + publishDelay, first.serverDate, clock.getAsLong());
         ExecutorService pool = scanPool;
         for (int p = 1; p < s.pages; p++) {
             final int page = p;
@@ -498,6 +503,7 @@ public final class Engine {
                 nextAuctionPoll = now + staleDelay(auctionStale);
                 return;
             }
+            notePublished(first.lastUpdated, auctionStale > 0);
             auctionStale = 0;
             lastAuctionsUpdate = first.lastUpdated;
             long recentSince = now - clockSkew - 2 * MINUTE;
@@ -514,7 +520,7 @@ public final class Engine {
             }
             status.ok("aste");
             auctionBackoff.reset();
-            nextAuctionPoll = expectedNextUpdate(first.lastUpdated, first.serverDate, clock.getAsLong());
+            nextAuctionPoll = expectedNextUpdate(first.lastUpdated + publishDelay, first.serverDate, clock.getAsLong());
         } catch (IOException e) {
             status.error("aste", e);
             nextAuctionPoll = clock.getAsLong() + auctionBackoff.fail();
@@ -621,6 +627,22 @@ public final class Engine {
         return Math.max(now + 500L, Math.min(next, now + 70_000L));
     }
 
+    /** Records how long after its lastUpdated a refresh became visible. */
+    private void notePublished(long lastUpdated, boolean waiting) {
+        long seen = serverTime() - lastUpdated;
+        status.lastRefreshDelay = seen;
+        if (seen < 0 || seen > 30_000L) {
+            return;
+        }
+        if (waiting) {
+            // We were asking every half second, so it has only just appeared.
+            publishDelay = publishDelay == 0 ? seen : (publishDelay * 3 + seen) / 4;
+        } else if (seen < publishDelay) {
+            publishDelay = seen;
+        }
+        status.publishDelay = publishDelay;
+    }
+
     /** Retry fast right around the expected refresh, slower if Hypixel is late. */
     private static long staleDelay(int attempts) {
         return attempts < 40 ? 500L : attempts < 100 ? 2_000L : 10_000L;
@@ -710,7 +732,7 @@ public final class Engine {
             markSold(page.auctions);
             status.ok("vendite");
             endedBackoff.reset();
-            nextEndedPoll = expectedNextUpdate(page.lastUpdated, page.serverDate, clock.getAsLong());
+            nextEndedPoll = expectedNextUpdate(page.lastUpdated + publishDelay, page.serverDate, clock.getAsLong());
         } catch (IOException e) {
             status.error("vendite", e);
             nextEndedPoll = clock.getAsLong() + endedBackoff.fail();
@@ -832,6 +854,7 @@ public final class Engine {
             ItemCatalog catalog = hypixel.fetchItems();
             if (catalog.size() > 0) {
                 items = catalog;
+                prices.setCatalog(catalog);
             }
             status.lastItems = now;
             status.ok("oggetti");

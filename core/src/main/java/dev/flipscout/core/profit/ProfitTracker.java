@@ -210,6 +210,8 @@ public final class ProfitTracker {
     /** Unsold purchases by normalised item name, oldest first. */
     private final LinkedHashMap<String, Deque<Lot>> lots = new LinkedHashMap<String, Deque<Lot>>();
     private final List<Unclaimed> unclaimed = new ArrayList<Unclaimed>();
+    /** Unit price of the last buy order placed per item, for orders flipped into sell offers. */
+    private final LinkedHashMap<String, Double> orderPrices = new LinkedHashMap<String, Double>();
     private boolean dirty;
 
     /** @param async runs a task off the calling thread (for saving) */
@@ -256,6 +258,23 @@ public final class ProfitTracker {
             case BAZAAR_BOUGHT:
                 buy(t, now);
                 return null;
+            case BAZAAR_ORDER_PLACED:
+                orderPrices.remove(normalize(t.item));
+                orderPrices.put(normalize(t.item), t.coins / t.amount);
+                while (orderPrices.size() > 200) {
+                    Iterator<String> it = orderPrices.keySet().iterator();
+                    it.next();
+                    it.remove();
+                }
+                return null;
+            case BAZAAR_ORDER_FLIPPED: {
+                // The items go straight into a sell offer without being claimed: bought at the order's price.
+                Double unit = orderPrices.get(normalize(t.item));
+                if (unit != null) {
+                    buy(new TradeParser.Trade(TradeParser.Kind.BAZAAR_BOUGHT, t.item, t.amount, unit * t.amount, null), now);
+                }
+                return null;
+            }
             case AUCTION_SOLD:
                 unclaimed.add(new Unclaimed(t.item, playerName(t.player), t.coins, now));
                 return sell(t.item, t.amount, t.coins - Fees.auctionSellFees(t.coins, config), now, true);
@@ -622,6 +641,12 @@ public final class ProfitTracker {
                     queue.addLast(new Lot(item, (int) JsonTree.num(m.get("amount"), 1),
                         JsonTree.num(m.get("unitCost"), 0), (long) JsonTree.num(m.get("time"), 0)));
                 }
+                for (Map.Entry<String, Object> entry : JsonTree.obj(root.get("orderPrices")).entrySet()) {
+                    double unit = JsonTree.num(entry.getValue(), Double.NaN);
+                    if (unit > 0) {
+                        orderPrices.put(entry.getKey(), unit);
+                    }
+                }
                 for (Object o : JsonTree.arr(root.get("unclaimed"))) {
                     Map<String, Object> m = JsonTree.obj(o);
                     String item = JsonTree.str(m.get("item"));
@@ -643,6 +668,7 @@ public final class ProfitTracker {
                 flips.clear();
                 lots.clear();
                 unclaimed.clear();
+                orderPrices.clear();
             }
         }
     }
@@ -738,6 +764,11 @@ public final class ProfitTracker {
                 }
             }
             w.endArray();
+            w.name("orderPrices").beginObject();
+            for (Map.Entry<String, Double> entry : orderPrices.entrySet()) {
+                w.name(entry.getKey()).value(entry.getValue());
+            }
+            w.endObject();
             w.name("unclaimed").beginArray();
             for (Unclaimed u : unclaimed) {
                 w.beginObject();

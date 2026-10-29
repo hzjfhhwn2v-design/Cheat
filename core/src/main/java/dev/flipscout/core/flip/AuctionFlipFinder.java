@@ -8,6 +8,12 @@ import dev.flipscout.core.market.Valuation;
 
 /** Decides whether a BIN auction is worth buying to resell. */
 public final class AuctionFlipFinder {
+    /**
+     * With no sales data the lowest BIN is the only reference, and with one or two other listings
+     * it is often just an overpriced one: it needs at least this many.
+     */
+    static final int MIN_LISTINGS_WITHOUT_SALES = 3;
+
     private final Config config;
     private final PriceService prices;
 
@@ -35,12 +41,15 @@ public final class AuctionFlipFinder {
             valuation = prices.valuate(key, listing.uuid, listing.unitPrice, true);
         }
         AuctionFlip flip = judge(listing, valuation, false);
-        if (!config.ahUpgrades || valuation.bazaar
-            || prices.addUpgrades(valuation, listing, config.ahUpgradePercent / 100.0) <= 0) {
+        if (!config.ahUpgrades || valuation.bazaar) {
             return flip;
         }
-        // Worth more with its upgrades. If it is a flip only thanks to them, it needs a bigger margin.
-        return judge(listing, valuation, flip == null);
+        double extra = prices.addUpgrades(valuation, listing, config.ahUpgradePercent / 100.0);
+        if (extra == 0) {
+            return flip;
+        }
+        // Worth more (or less) for its upgrades. A flip only thanks to them needs a bigger margin.
+        return judge(listing, valuation, flip == null && extra > 0);
     }
 
     /**
@@ -70,6 +79,9 @@ public final class AuctionFlipFinder {
         double profit = resale - fees - listing.price;
         double percent = listing.price > 0 ? profit * 100.0 / listing.price : Double.POSITIVE_INFINITY;
         boolean weak = !valuation.bazaar && valuation.references < 2;
+        if (weak && Double.isNaN(valuation.salesReference()) && valuation.otherListings < MIN_LISTINGS_WITHOUT_SALES) {
+            return null;
+        }
         double minPercent = weak || upgradeOnly ? config.ahMinPercent * 2 : config.ahMinPercent;
         if (profit < config.ahMinProfit || percent < minPercent) {
             return null;

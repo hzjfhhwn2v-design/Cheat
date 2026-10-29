@@ -4,6 +4,7 @@ import dev.flipscout.core.Config;
 import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.BazaarSnapshot;
 import dev.flipscout.core.api.CoflnetApi;
+import dev.flipscout.core.api.ItemCatalog;
 import dev.flipscout.core.api.NeuApi;
 import dev.flipscout.core.item.ItemKey;
 import dev.flipscout.core.item.ItemKeys;
@@ -31,6 +32,8 @@ public final class PriceService {
     private volatile Map<String, Double> neuLowestBins = Collections.emptyMap();
     private volatile Map<String, NeuApi.Average> neuAverages = Collections.emptyMap();
     private volatile BazaarSnapshot bazaar;
+    /** For star costs. */
+    private volatile ItemCatalog catalog = ItemCatalog.EMPTY;
     /** Part id -> {price, time}: prices of upgrade parts, briefly cached. */
     private final Map<String, double[]> partPrices = new ConcurrentHashMap<String, double[]>();
 
@@ -52,6 +55,10 @@ public final class PriceService {
 
     public void setBazaar(BazaarSnapshot snapshot) {
         bazaar = snapshot;
+    }
+
+    public void setCatalog(ItemCatalog items) {
+        catalog = items;
     }
 
     public BazaarSnapshot bazaar() {
@@ -211,12 +218,14 @@ public final class PriceService {
         }
         double total = 0;
         for (Upgrades.Part part : upgrades.parts()) {
-            double price = partPrice(part.id);
-            if (!(price > 0)) {
-                continue;
+            double value;
+            if (part.kind == Upgrades.Kind.STARS) {
+                value = starsValue(part.id, part.count);
+            } else {
+                double price = partPrice(part.id);
+                value = price > 0 ? price * part.count * part.kind.weight : 0;
             }
-            double value = price * part.count * part.kind.weight;
-            if (value < MIN_PART_VALUE) {
+            if (!(value >= MIN_PART_VALUE)) {
                 continue;
             }
             total += value;
@@ -228,23 +237,60 @@ public final class PriceService {
     }
 
     /**
-     * Adds to {@code v} what the upgrades of {@code listing} are worth beyond those of the listing
-     * its lowest BIN comes from, counting {@code share} of it and at most doubling the value.
-     * Returns the extra added (0 when none).
+     * What {@code stars} stars add to item {@code id}: the essence and items they cost (counted at
+     * {@link Upgrades#STAR_COST_WEIGHT}) plus, on dungeon items, the master stars after the fifth.
+     */
+    double starsValue(String id, int stars) {
+        ItemCatalog.Info info = catalog.get(id);
+        ItemCatalog.StarCost[][] costs = info == null ? null : info.upgradeCosts;
+        int levels = costs == null ? 0 : costs.length;
+        double value = 0;
+        for (int i = 0; i < Math.min(stars, levels); i++) {
+            for (ItemCatalog.StarCost cost : costs[i]) {
+                double price = partPrice(cost.id);
+                if (price > 0) {
+                    value += price * cost.amount * Upgrades.STAR_COST_WEIGHT;
+                }
+            }
+        }
+        // Crimson Isle armour has ten or fifteen stars of its own; dungeon items have five, then master stars.
+        boolean dungeon = levels == 5 || (levels == 0 && info != null && info.dungeonItem);
+        if (dungeon) {
+            for (int i = 0; i < Math.min(stars - 5, Upgrades.MASTER_STARS.length); i++) {
+                double price = partPrice(Upgrades.MASTER_STARS[i]);
+                if (price > 0) {
+                    value += price;
+                }
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Adjusts {@code v} for the upgrades of {@code listing} compared with those of the listing its
+     * lowest BIN comes from, counting {@code share} of the difference. More upgrades raise the value
+     * (at most doubling it); fewer lower it when the value is that listing's price (at most halving
+     * it). Returns the change (0 when none).
      */
     public double addUpgrades(Valuation v, AuctionIndex.Listing listing, double share) {
-        if (listing.upgrades == null || !(v.value > 0) || !(share > 0)) {
+        if (!(v.value > 0) || !(share > 0) || listing.count != 1) {
+            return 0;
+        }
+        AuctionIndex.Listing reference = index.lowest(listing.key.key, listing.uuid);
+        if (listing.upgrades == null && (reference == null || reference.upgrades == null)) {
             return 0;
         }
         List<Valuation.Part> parts = new ArrayList<Valuation.Part>();
         double mine = upgradeValue(listing.upgrades, parts);
-        if (!(mine > 0)) {
-            return 0;
-        }
-        AuctionIndex.Listing reference = index.lowest(listing.key.key, listing.uuid);
         double theirs = reference == null ? 0 : upgradeValue(reference.upgrades, null);
-        double extra = Math.min(Math.max(0, mine - theirs) * share, v.value);
-        if (!(extra > 0)) {
+        double difference = mine - theirs;
+        // Only when the value is the reference's own price do its upgrades come with it.
+        boolean fromReference = reference != null && v.value >= reference.unitPrice - 0.5;
+        if (difference < 0 && !fromReference) {
+            difference = 0;
+        }
+        double extra = Math.max(-v.value / 2, Math.min(difference * share, v.value));
+        if (extra == 0) {
             return 0;
         }
         v.upgradeParts.addAll(parts);
