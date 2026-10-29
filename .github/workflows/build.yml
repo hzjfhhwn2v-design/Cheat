@@ -69,19 +69,19 @@ jobs:
           distribution: temurin
           # Loom 1.19 runs on Java 25 even when the mod targets 21.
           java-version: 25
-      - name: Screen API (temporary diagnostic)
-        if: startsWith(matrix.minecraft, '26.')
-        continue-on-error: true
-        working-directory: ${{ matrix.dir }}
-        run: >
-          ./gradlew printScreenApi --no-daemon -q
-          -PminecraftVersion=${{ matrix.minecraft }}
-          "-PminecraftRange=${{ matrix.range }}"
-          -PfabricVersion=${{ matrix.fabric }}
       - name: Build
         working-directory: ${{ matrix.dir }}
         run: >
           ./gradlew build --no-daemon --stacktrace
+          -PminecraftVersion=${{ matrix.minecraft }}
+          "-PminecraftRange=${{ matrix.range }}"
+          -PfabricVersion=${{ matrix.fabric }}
+      - name: Screen API (temporary diagnostic)
+        if: always() && startsWith(matrix.minecraft, '26.')
+        continue-on-error: true
+        working-directory: ${{ matrix.dir }}
+        run: >
+          ./gradlew printScreenApi --no-daemon -q
           -PminecraftVersion=${{ matrix.minecraft }}
           "-PminecraftRange=${{ matrix.range }}"
           -PfabricVersion=${{ matrix.fabric }}

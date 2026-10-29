@@ -1,3 +1,5 @@
+import java.net.URLClassLoader
+
 plugins {
     // 26.x ships unobfuscated: no mappings and no remapping step.
     id("net.fabricmc.fabric-loom") version "1.19-SNAPSHOT"
@@ -49,7 +51,7 @@ tasks.processResources {
 tasks.register("printScreenApi") {
     val classpath = sourceSets.main.get().compileClasspath
     doLast {
-        val loader = java.net.URLClassLoader(classpath.files.map { it.toURI().toURL() }.toTypedArray(), null)
+        val loader = URLClassLoader(classpath.files.map { it.toURI().toURL() }.toTypedArray(), null)
         for (name in listOf("net.minecraft.client.Minecraft", "net.minecraft.client.gui.screens.Screen")) {
             val type = Class.forName(name, false, loader)
             println("== $name")
