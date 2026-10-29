@@ -66,7 +66,7 @@ class CommandsTest {
         run("set", "bz.intervalSeconds", "1");
         run("set", "nope", "1");
         assertEquals(5, flipScout.config().ahMinPercent, 1e-9);
-        assertEquals(30, flipScout.config().bzIntervalSeconds);
+        assertEquals(60, flipScout.config().bzIntervalSeconds);
         String text = platform.allText();
         assertTrue(text.contains("ah.minPercent: serve un numero"), text);
         assertTrue(text.contains("deve essere tra 10 e 600"), text);

@@ -145,7 +145,7 @@ class EngineTest {
         initialMarket();
         http.put(PAGE0, TestData.auctionPage(0, 1, T0 + 600_000,
             hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L)));
-        clock.set(T0 + 11 * 60_000);
+        clock.set(T0 + 31 * 60_000);
         engine.tick();
         assertEquals(1, engine.index.size());
     }
@@ -162,7 +162,7 @@ class EngineTest {
         assertEquals(1, platform.withCommand("/bz Good").size());
 
         http.put(BAZAAR, TestData.bazaar(2L, good));
-        clock.addAndGet(31_000);
+        clock.addAndGet(61_000);
         engine.tick();
         assertEquals(1, platform.withCommand("/bz Good").size());
 

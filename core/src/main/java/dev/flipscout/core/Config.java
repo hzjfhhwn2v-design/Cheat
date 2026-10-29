@@ -41,7 +41,7 @@ public final class Config {
     public volatile boolean ahRequireVolume = false;
     public volatile String ahStrategy = "conservative";
     public volatile int ahMinSalesSamples = 3;
-    public volatile int ahFullScanMinutes = 10;
+    public volatile int ahFullScanMinutes = 30;
     public volatile int ahPollPages = 2;
     public volatile double ahFeeUnder10m = 1.0;
     public volatile double ahFee10mTo100m = 2.0;
@@ -51,7 +51,7 @@ public final class Config {
 
     // Bazaar
     public volatile boolean bzEnabled = true;
-    public volatile int bzIntervalSeconds = 30;
+    public volatile int bzIntervalSeconds = 60;
     public volatile double bzTax = 1.25;
     public volatile int bzMaxPerCycle = 3;
     public volatile boolean bzFlipEnabled = true;
@@ -166,7 +166,7 @@ public final class Config {
                 int read(Config c) { return c.ahMinSalesSamples; }
                 void write(Config c, int v) { c.ahMinSalesSamples = v; }
             },
-            new IntSetting("ah.fullScanMinutes", "Ogni quanti minuti riscaricare tutte le aste (pesante: ~30-60 MB)", 3, 120) {
+            new IntSetting("ah.fullScanMinutes", "Ogni quanti minuti riscaricare tutte le aste (pesante: decine di MB ogni volta)", 5, 240) {
                 int read(Config c) { return c.ahFullScanMinutes; }
                 void write(Config c, int v) { c.ahFullScanMinutes = v; }
             },

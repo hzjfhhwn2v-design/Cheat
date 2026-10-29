@@ -8,4 +8,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "flipscout-fabric"
+rootProject.name = "flipscout-fabric-26"
