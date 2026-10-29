@@ -191,6 +191,21 @@ class FlipFinderTest {
     }
 
     @Test
+    void hugeMarginsWithoutSalesNeedASecondReference() {
+        index.add(listing("a1", HYPERION, 900_000_000L, 1));
+        index.add(listing("a2", HYPERION, 950_000_000L, 1));
+        index.add(listing("a3", HYPERION, 990_000_000L, 1));
+        // 300M against a lowest BIN of 900M: +189%, more likely three inflated listings than a bargain...
+        AuctionIndex.Listing suspicious = listing("new", HYPERION, 300_000_000L, 1);
+        assertNull(finder.evaluate(suspicious, false));
+        // ...unless Coflnet's sales confirm the price.
+        coflnetHttp.put("https://sky.coflnet.com/api/item/price/HYPERION", "{\"median\":890000000,\"volume\":4}");
+        AuctionFlip flip = finder.evaluate(suspicious, true);
+        assertNotNull(flip);
+        assertFalse(flip.weak);
+    }
+
+    @Test
     void thresholdsBudgetAndBlacklist() {
         hyperionMarket();
         AuctionIndex.Listing cheap = listing("new", HYPERION, 800_000_000L, 1);

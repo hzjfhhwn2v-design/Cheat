@@ -66,6 +66,14 @@ class ItemKeysTest {
     }
 
     @Test
+    void midasWeaponsAreKeptApartByWinningBid() throws IOException {
+        String cheap = TestData.itemBytes(map("id", "MIDAS_SWORD", "winning_bid", 3_000_000), null, 1);
+        String maxed = TestData.itemBytes(map("id", "MIDAS_SWORD", "winning_bid", 50_000_000), null, 1);
+        assertEquals("MIDAS_SWORD[BID <10M]", ItemKeys.decode(cheap, null).key.key);
+        assertEquals("MIDAS_SWORD[BID 50-100M]", ItemKeys.decode(maxed, null).key.key);
+    }
+
+    @Test
     void partyHatsAreKeptApartByColourEmojiAndYear() throws IOException {
         String hat = TestData.itemBytes(map("id", "PARTY_HAT_SLOTH", "party_hat_emoji", "tears", "party_hat_year", 2023),
             null, 1);

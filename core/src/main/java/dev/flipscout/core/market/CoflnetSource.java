@@ -44,8 +44,6 @@ public final class CoflnetSource {
     /** Times of the lookups of the last minute: all of them, and those made ahead of time. */
     private final ArrayDeque<Long> calls = new ArrayDeque<Long>();
     private final ArrayDeque<Long> prefetches = new ArrayDeque<Long>();
-    /** Time of the last lookup for a live flip, or null. */
-    private Long lastLiveCall;
     /** Tags being looked up right now, so concurrent callers do not ask twice. */
     private final Set<String> inFlight = new HashSet<String>();
     private long pausedUntil;
@@ -108,8 +106,6 @@ public final class CoflnetSource {
             calls.addLast(now);
             if (ahead) {
                 prefetches.addLast(now);
-            } else {
-                lastLiveCall = now;
             }
             inFlight.add(tag);
         }
@@ -137,8 +133,9 @@ public final class CoflnetSource {
     }
 
     /**
-     * At most {@link #MAX_PER_MINUTE} lookups a minute. Live ones keep two seconds apart from
-     * each other; those ahead of time keep two seconds from any lookup and use only their share.
+     * At most {@link #MAX_PER_MINUTE} lookups a minute. Live ones may come together (the new
+     * auctions of a minute all arrive at once); those ahead of time keep two seconds from any
+     * lookup and use only their share.
      */
     private boolean allowed(long now, boolean ahead) {
         prune(calls, now);
@@ -146,11 +143,11 @@ public final class CoflnetSource {
         if (calls.size() >= MAX_PER_MINUTE) {
             return false;
         }
-        if (ahead) {
-            Long last = calls.peekLast();
-            return prefetches.size() < PREFETCH_MAX_PER_MINUTE && (last == null || now - last >= MIN_GAP_MS);
+        if (!ahead) {
+            return true;
         }
-        return lastLiveCall == null || now - lastLiveCall >= MIN_GAP_MS;
+        Long last = calls.peekLast();
+        return prefetches.size() < PREFETCH_MAX_PER_MINUTE && (last == null || now - last >= MIN_GAP_MS);
     }
 
     private static void prune(ArrayDeque<Long> times, long now) {

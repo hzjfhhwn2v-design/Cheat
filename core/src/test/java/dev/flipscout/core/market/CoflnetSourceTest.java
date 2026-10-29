@@ -50,6 +50,17 @@ class CoflnetSourceTest {
     }
 
     @Test
+    void liveLookupsMayComeTogether() {
+        for (int i = 0; i < 4; i++) {
+            http.put(PRICE + "LIVE" + i, "{\"median\":1000,\"volume\":5}");
+            assertNotNull(coflnet.get("LIVE" + i));
+        }
+        for (int i = 0; i < 4; i++) {
+            assertEquals(1, http.count(PRICE + "LIVE" + i));
+        }
+    }
+
+    @Test
     void itemsCoflnetDoesNotKnowAreNotAskedAgainForAnHour() {
         assertNull(coflnet.prefetch("NOPE"));
         assertEquals(1, http.count(PRICE + "NOPE"));

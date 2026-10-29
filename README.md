@@ -149,11 +149,14 @@ Fonti:
 Il valore di un oggetto (strategia `conservative`) è il **minore** tra il BIN più basso degli *altri* venditori e la
 mediana delle vendite recenti: un oggetto vale quanto si vende, ma non più di quanto lo si può comprare. Se c'è un solo
 riferimento serve il doppio della percentuale minima e la notifica ha un ⚠; se quel riferimento è il BIN più basso,
-servono anche almeno 3 altre aste dello stesso oggetto, perché con una o due spesso è solo un prezzo esagerato. Un
-oggetto del bazaar messo all'asta viene valutato al prezzo di vendita istantanea del bazaar.
+servono anche almeno 3 altre aste dello stesso oggetto, perché con una o due spesso è solo un prezzo esagerato. E se
+in quel caso il margine supera il 100%, il flip arriva solo se Coflnet lo conferma: per gli oggetti scambiati di rado
+capita che tutte le aste in vendita siano gonfiate. Un oggetto del bazaar messo all'asta viene valutato al prezzo di
+vendita istantanea del bazaar.
 
 Per non confrontare cose diverse: i pet sono raggruppati per tipo, rarità e fascia di livello (e skin), i libri per
-incantesimo e livello, le rune per tipo e livello, le armature con attributi per combinazione di attributi.
+incantesimo e livello, le rune per tipo e livello, le armature con attributi per combinazione di attributi, le armi
+di Mida per fascia dell'offerta vinta all'asta nera, i party hat per colore, emoji e anno.
 
 **Upgrade.** Un'arma piena di upgrade messa al prezzo di una base è un'occasione. Il mod riconosce:
 

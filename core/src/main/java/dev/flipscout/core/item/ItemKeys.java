@@ -329,6 +329,13 @@ public final class ItemKeys {
             key.append('[').append(NbtReader.intValue(extra.get("new_years_cake"), 0)).append(']');
             exact = false;
         }
+        // A Midas weapon is worth what was bid for it in the Dark Auction.
+        int bid = NbtReader.intValue(extra.get("winning_bid"), 0);
+        if (bid > 0 && id.contains("MIDAS")) {
+            key.append("[BID ").append(bid < 10_000_000 ? "<10M" : bid < 25_000_000 ? "10-25M"
+                : bid < 50_000_000 ? "25-50M" : bid < 100_000_000 ? "50-100M" : "100M+").append(']');
+            exact = false;
+        }
         // Party hats differ by colour, emoji and year.
         for (String field : new String[] {"party_hat_color", "party_hat_emoji", "party_hat_year"}) {
             Object value = extra.get(field);

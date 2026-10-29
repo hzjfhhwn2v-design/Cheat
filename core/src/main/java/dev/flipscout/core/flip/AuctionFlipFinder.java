@@ -13,6 +13,11 @@ public final class AuctionFlipFinder {
      * it is often just an overpriced one: it needs at least this many.
      */
     static final int MIN_LISTINGS_WITHOUT_SALES = 3;
+    /**
+     * Above this margin a lowest BIN with no sales behind it is far more often a set of inflated
+     * listings than a real bargain: such flips need a second reference (Coflnet) to go out.
+     */
+    static final double MAX_PERCENT_WITHOUT_SALES = 100;
 
     private final Config config;
     private final PriceService prices;
@@ -84,6 +89,9 @@ public final class AuctionFlipFinder {
         }
         double minPercent = weak || upgradeOnly ? config.ahMinPercent * 2 : config.ahMinPercent;
         if (profit < config.ahMinProfit || percent < minPercent) {
+            return null;
+        }
+        if (weak && Double.isNaN(valuation.salesReference()) && percent > MAX_PERCENT_WITHOUT_SALES) {
             return null;
         }
         if (!Double.isNaN(valuation.volumePerDay)) {
