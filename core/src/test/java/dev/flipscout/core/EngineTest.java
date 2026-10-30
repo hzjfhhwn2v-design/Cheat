@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -66,8 +67,9 @@ class EngineTest {
         assertEquals(2, engine.index.size());
         assertEquals(5, engine.sales.sampleCount());
         assertTrue(platform.messages.isEmpty());
-        // NEU is not served by the fake: reported as an error, everything else keeps working.
-        assertTrue(engine.status.errors().containsKey("NEU"));
+        // Coflnet is off in these tests: not even its item names are asked for.
+        assertEquals(0, http.count("https://sky.coflnet.com/api/items"));
+        assertTrue(engine.status.errors().isEmpty());
         assertEquals(1, engine.items().size());
     }
 
@@ -213,6 +215,133 @@ class EngineTest {
         engine.tick();
         assertEquals(2, platform.withCommand("/bz Good").size());
         assertNotNull(engine.topBazaar(5));
+    }
+
+    @Test
+    void flipsHiddenByTheBlacklistAreSummarizedAfterTheRound() {
+        initialMarket();
+        config.blacklist = Collections.singleton("HYPERION");
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 10_000)));
+        clock.set(t1 + 5_000);
+        engine.tick();
+        assertTrue(platform.withCommand("/viewauction new").isEmpty());
+        assertEquals(0, platform.sounds);
+        List<Msg> summary = platform.withCommand("/flipscout blacklist list");
+        assertEquals(1, summary.size());
+        assertTrue(summary.get(0).toPlainString().contains("I tuoi filtri hanno bloccato 1 flip"));
+        String hover = summary.get(0).parts().get(0).hover;
+        assertTrue(hover.contains("Hyperion") && hover.contains("(HYPERION)"), hover);
+
+        // A round with nothing new says nothing.
+        clock.addAndGet(65_000);
+        engine.tick();
+        assertEquals(1, platform.withCommand("/flipscout blacklist list").size());
+
+        // Switched off: no summary.
+        config.blockedSummary = false;
+        long t2 = t1 + 120_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t2,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("new2", "s5", 800_000_000L, t2 - 10_000)));
+        clock.set(t2 + 5_000);
+        engine.tick();
+        assertEquals(1, platform.withCommand("/flipscout blacklist list").size());
+        assertTrue(platform.withCommand("/viewauction new2").isEmpty());
+    }
+
+    @Test
+    void bazaarFlipsHiddenByTheBlacklistAreSummarizedOncePerCooldown() {
+        config.ahEnabled = false;
+        config.bzCrashEnabled = false;
+        config.bzNpcEnabled = false;
+        config.blacklist = Collections.singleton("GOOD");
+        String good = TestData.product("GOOD", new double[][] {{12_500, 10}}, new double[][] {{10_000, 10}},
+            168 * 1000, 168 * 800);
+        http.put(BAZAAR, TestData.bazaar(1L, good));
+        engine.tick();
+        assertTrue(platform.withCommand("/bz Good").isEmpty());
+        List<Msg> summary = platform.withCommand("/flipscout blacklist list");
+        assertEquals(1, summary.size());
+        assertTrue(summary.get(0).parts().get(0).hover.contains("BZ flip"));
+
+        http.put(BAZAAR, TestData.bazaar(2L, good));
+        clock.addAndGet(61_000);
+        engine.tick();
+        assertEquals(1, platform.withCommand("/flipscout blacklist list").size());
+    }
+
+    @Test
+    void auctionsOfYourCoopAreNeverSuggested() {
+        initialMarket();
+        long t1 = T0 + 60_000;
+        // baldih, on your profile, lists a Hyperion well under the market.
+        String friends = hyperion("friends", "friend", 800_000_000L, t1 - 10_000)
+            .replace("\"coop\":[\"friend\"]", "\"coop\":[\"myuuid\",\"friend\"]");
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L), friends));
+        clock.set(t1 + 5_000);
+        engine.tick();
+        assertTrue(platform.withCommand("/viewauction friends").isEmpty());
+        assertTrue(engine.coop.isMember("friend"));
+        assertFalse(engine.coop.isMember("s1"));
+        // Still a listing like any other for the prices.
+        assertEquals(3, engine.index.size());
+        assertTrue(engine.topAuctions(5).isEmpty());
+    }
+
+    @Test
+    void flipsBoughtByYourCoopAreMarked() {
+        initialMarket();
+        long t1 = T0 + 60_000;
+        String friends = TestData.auction("dirt", "friend", "Enchanted Dirt", "COMMON", 1_000L, true, t1 - 10_000,
+            TestData.plainItem("ENCHANTED_DIRT")).replace("\"coop\":[\"friend\"]", "\"coop\":[\"friend\",\"myuuid\"]")
+            .replace("\"profile_id\":\"p\"", "\"profile_id\":\"ours\"");
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L),
+            hyperion("new", "s4", 800_000_000L, t1 - 10_000),
+            hyperion("other", "s5", 801_000_000L, t1 - 10_000), friends));
+        clock.set(t1 + 5_000);
+        engine.tick();
+        assertEquals(1, platform.withCommand("/viewauction new").size());
+
+        // baldih bought the first; someone on your profile (by profile id) the second.
+        long t2 = t1 + 60_000;
+        http.put(ENDED, TestData.endedPage(t2,
+            TestData.ended("new", 800_000_000L, true, t1 + 2_000, TestData.plainItem("HYPERION"))
+                .replace("\"buyer\":\"b\"", "\"buyer\":\"friend\""),
+            TestData.ended("other", 801_000_000L, true, t1 + 3_000, TestData.plainItem("HYPERION"))
+                .replace("\"buyer\":\"b\"", "\"buyer\":\"x\",\"buyer_profile\":\"ours\"")));
+        clock.set(t2 + 1_000);
+        engine.tick();
+        for (Engine.Notification notification : engine.recent()) {
+            assertEquals(Engine.Buyer.COOP, notification.buyer(), notification.auctionUuid);
+        }
+    }
+
+    @Test
+    void bazaarNamesComeFromCoflnetWhenHypixelHasNone() {
+        config.sourceCoflnet = true;
+        config.ahEnabled = false;
+        http.put("https://sky.coflnet.com/api/items",
+            "[{\"name\":\"Birries Shard\",\"tag\":\"SHARD_BIRRIES\"},{\"name\":\"Hype\",\"tag\":\"HYPERION\"}]");
+        engine.tick();
+        assertEquals("Birries Shard", engine.items().bazaarSearch("SHARD_BIRRIES"));
+        // Hypixel's own name wins.
+        assertEquals("Hyperion", engine.items().displayName("HYPERION"));
+        assertEquals(1, http.count("https://sky.coflnet.com/api/items"));
+        // Asked again only a day later.
+        clock.addAndGet(23 * 60 * 60_000L);
+        engine.tick();
+        assertEquals(1, http.count("https://sky.coflnet.com/api/items"));
+        clock.addAndGet(2 * 60 * 60_000L);
+        engine.tick();
+        assertEquals(2, http.count("https://sky.coflnet.com/api/items"));
     }
 
     @Test
@@ -431,7 +560,7 @@ class EngineTest {
         engine.tick();
         assertEquals(t1 + 2_000, fast.soldAt());
         assertEquals(12_000, fast.soldAt() - fast.listedAt);
-        assertFalse(fast.boughtByYou());
+        assertEquals(Engine.Buyer.SOMEONE_ELSE, fast.buyer());
 
         // The next one you bought yourself.
         long t3 = t2 + 60_000;
@@ -448,7 +577,7 @@ class EngineTest {
         engine.tick();
         Engine.Notification mine = engine.recent().get(0);
         assertEquals("mine", mine.auctionUuid);
-        assertTrue(mine.boughtByYou());
+        assertEquals(Engine.Buyer.YOU, mine.buyer());
         assertEquals(2, engine.recent().size());
     }
 

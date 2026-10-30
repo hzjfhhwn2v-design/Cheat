@@ -31,7 +31,7 @@ import java.util.function.LongSupplier;
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "guadagni", "sessione", "totale", "flip",
-        "magazzino", "set", "config", "blacklist", "status", "reload", "test");
+        "magazzino", "discord", "coop", "set", "config", "blacklist", "status", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM HH:mm");
     private static final List<String> ON_OFF = Arrays.asList("on", "off");
@@ -48,14 +48,17 @@ final class Commands {
     private final File configFile;
     private final Engine engine;
     private final ProfitTracker tracker;
+    private final Discord discord;
     private final Platform platform;
     private final LongSupplier clock;
 
-    Commands(Config config, File configFile, Engine engine, ProfitTracker tracker, Platform platform, LongSupplier clock) {
+    Commands(Config config, File configFile, Engine engine, ProfitTracker tracker, Discord discord, Platform platform,
+             LongSupplier clock) {
         this.config = config;
         this.configFile = configFile;
         this.engine = engine;
         this.tracker = tracker;
+        this.discord = discord;
         this.platform = platform;
         this.clock = clock;
     }
@@ -130,6 +133,12 @@ final class Commands {
                 case "magazzino":
                     inventory(args);
                     break;
+                case "discord":
+                    discord(args);
+                    break;
+                case "coop":
+                    coop();
+                    break;
                 case "status":
                 case "stato":
                     status();
@@ -174,6 +183,8 @@ final class Commands {
         helpLine("totale [reset]", "totale", "totale e ultimi giorni");
         helpLine("flip", "flip", "gli ultimi flip chiusi");
         helpLine("magazzino [svuota]", "magazzino", "comprati e non ancora venduti");
+        helpLine("discord [test]", "discord", "resoconti su Discord: stato e messaggio di prova");
+        helpLine("coop", "coop", "i membri della tua coop riconosciuti dalle aste");
         helpLine("set <chiave> <valore>", "set ", "cambia un'impostazione (es. set ah.minProfit 1m)");
         helpLine("config [filtro]", "config", "mostra le impostazioni");
         helpLine("blacklist add|remove|list [ID]", "blacklist ", "oggetti da ignorare");
@@ -342,8 +353,12 @@ final class Commands {
         }
         long soldAt = notification.soldAt();
         if (soldAt > 0) {
-            if (notification.boughtByYou()) {
+            if (notification.buyer() == Engine.Buyer.YOU) {
                 msg.add(" §a[comprata da te]");
+                return;
+            }
+            if (notification.buyer() == Engine.Buyer.COOP) {
+                msg.add(" §a[comprata da " + coopBuyer(notification) + "]");
                 return;
             }
             String after = Text.shortDuration(soldAt - notification.listedAt);
@@ -362,20 +377,29 @@ final class Commands {
             return;
         }
         if (last.soldAt() > 0) {
-            info(last.boughtByYou() ? "§aQuest'asta l'hai già comprata tu."
+            info(last.buyer() == Engine.Buyer.YOU ? "§aQuest'asta l'hai già comprata tu."
+                : last.buyer() == Engine.Buyer.COOP ? "§aQuest'asta l'ha già comprata " + coopBuyer(last) + "."
                 : "§cL'asta è già stata comprata da qualcun altro, non la apro.");
             return;
         }
         platform.sendCommand(last.command.startsWith("/") ? last.command.substring(1) : last.command);
     }
 
+    private static String coopBuyer(Engine.Notification notification) {
+        return notification.buyerName() != null ? notification.buyerName() + " §7(la tua coop)§a" : "la tua coop";
+    }
+
     private void set(String[] args) {
-        if (args.length < 3) {
+        if (args.length < 2) {
             throw new IllegalArgumentException("Uso: /flipscout set <chiave> <valore>. Vedi /flipscout config");
         }
         Config.Setting setting = findSetting(args[1]);
         if (setting == null) {
             throw new IllegalArgumentException("Impostazione sconosciuta: " + args[1] + ". Vedi /flipscout config");
+        }
+        // Text settings may be emptied by giving no value.
+        if (args.length < 3 && setting.kind() != Config.Setting.Kind.TEXT) {
+            throw new IllegalArgumentException("Uso: /flipscout set " + setting.key + " <valore>");
         }
         String value = join(args, 2);
         try {
@@ -417,6 +441,10 @@ final class Commands {
 
     private String display(Config.Setting setting) {
         String value = setting.get(config);
+        if (setting.secret()) {
+            // Never in chat: it would end up in screenshots.
+            return value.isEmpty() ? "§8(vuoto)" : "§aimpostato §8(nascosto, modificalo da /flipscout gui)";
+        }
         if (setting instanceof Config.CoinsSetting) {
             long coins = Long.parseLong(value);
             return coins == 0 && "budget".equals(setting.key) ? "nessun limite" : Coins.compact(coins);
@@ -484,17 +512,19 @@ final class Commands {
         BazaarSnapshot bazaar = engine.prices.bazaar();
         line("Bazaar", bazaar == null ? "non ancora scaricato"
             : bazaar.products.size() + " prodotti, controllato " + Text.ago(now, s.lastBazaarPoll));
-        line("NEU", config.sourceNeu
-            ? Coins.full(engine.prices.neuLowestBinCount()) + " BIN più bassi, " + Coins.full(engine.prices.neuAverageCount())
-                + " medie §8(" + Text.ago(now, s.lastNeu) + ")"
-            : "§8disattivato");
         line("Coflnet", config.sourceCoflnet
             ? Coins.full(engine.coflnet.cachedPrices()) + " prezzi in memoria, ultima risposta "
                 + Text.ago(now, engine.coflnet.lastSuccess())
                 + (engine.coflnet.lastError() != null ? " §8(" + engine.coflnet.lastError() + ")" : "")
             : "§8disattivato");
-        line("Oggetti conosciuti", Coins.full(engine.items().size()));
+        line("Oggetti conosciuti", Coins.full(engine.items().size()) + " §8(+ " + Coins.full(engine.items().nameCount())
+            + " nomi da Coflnet)");
+        List<String> members = engine.coop.memberNames();
+        if (!members.isEmpty()) {
+            line("Coop", String.join(", ", members) + " §8(le loro aste non vengono segnalate)");
+        }
         line("Notifiche in questa sessione", s.auctionNotifications + " aste, " + s.bazaarNotifications + " bazaar");
+        line("Discord", discordState(now));
         if (config.trackerEnabled) {
             ProfitTracker.Session session = tracker.session();
             line("Guadagni", "sessione " + ProfitTracker.signed(session.stats.profit) + (session.paused ? " §e(in pausa)" : "")
@@ -506,9 +536,49 @@ final class Commands {
         }
     }
 
+    private String discordState(long now) {
+        if (config.discordWebhook.isEmpty()) {
+            return "§8nessun webhook";
+        }
+        if (!config.discordEnabled) {
+            return "§8spento";
+        }
+        String state = "§aattivo §8(ultimo invio " + Text.ago(now, discord.lastSent()) + ")";
+        return discord.lastError() != null ? state + " §c" + discord.lastError() : state;
+    }
+
+    private void discord(String[] args) {
+        if (args.length > 1 && "test".equalsIgnoreCase(args[1])) {
+            info("§7Mando un messaggio di prova...");
+            discord.test();
+            return;
+        }
+        if (args.length > 1) {
+            throw new IllegalArgumentException("Uso: /flipscout discord [test]");
+        }
+        info("§fResoconti su Discord: " + discordState(clock.getAsLong()));
+        line("Aste", onOff(config.discordAuctions) + " §8| §7bazaar " + onOff(config.discordBazaar)
+            + " §8| §7importo minimo §f" + (config.discordMinCoins > 0 ? Coins.compact(config.discordMinCoins) : "nessuno"));
+        platform.showMessage(new Msg()
+            .run("§6[IMPOSTAZIONI] ", "/flipscout gui", "§7Il webhook si incolla nel menu, sezione Discord")
+            .run("§a[PROVA]", "/flipscout discord test", "§7Manda un messaggio di prova nel canale"));
+    }
+
+    private void coop() {
+        List<String> members = engine.coop.memberNames();
+        if (members.isEmpty()) {
+            info("§7Nessun membro della coop trovato per ora. §8Si riconoscono dalle aste: appena tu o un membro"
+                + " mettete qualcosa all'asta, compaiono qui.");
+            return;
+        }
+        info("§fLa tua coop: §a" + String.join("§7, §a", members));
+        line("Cosa cambia", "le loro aste non ti vengono segnalate come flip, e in §e/flipscout recent §fvedi se un"
+            + " flip l'hanno preso loro");
+    }
+
     private void test() {
         long now = clock.getAsLong();
-        ItemKey key = new ItemKey("HYPERION", "HYPERION", "HYPERION", true, "HYPERION", null);
+        ItemKey key = new ItemKey("HYPERION", "HYPERION", "HYPERION", null);
         AuctionIndex.Listing listing = new AuctionIndex.Listing("test", null, "Hyperion", "LEGENDARY", key,
             820_000_000L, 1, now - 40_000L, now + 3_600_000L, now, 0);
         Valuation valuation = new Valuation();
@@ -559,7 +629,9 @@ final class Commands {
                     return startingWith(keys, last);
                 }
                 case "config":
-                    return startingWith(Arrays.asList("ah.", "bz.", "source.", "url."), last);
+                    return startingWith(Arrays.asList("ah.", "bz.", "tracker.", "discord.", "source.", "url."), last);
+                case "discord":
+                    return startingWith(Collections.singletonList("test"), last);
                 case "blacklist":
                     return startingWith(Arrays.asList("add", "remove", "list"), last);
                 case "sessione":
@@ -639,8 +711,6 @@ final class Commands {
         }
         return out;
     }
-
-    // ---- Helpers ----
 
     // ---- Profits ----
 

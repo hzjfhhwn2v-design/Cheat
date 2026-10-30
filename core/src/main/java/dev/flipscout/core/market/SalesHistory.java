@@ -100,6 +100,9 @@ public final class SalesHistory {
     /** Held while writing the file, so two saves never write it at the same time. */
     private final Object fileLock = new Object();
     private final ArrayDeque<Integer> observed = new ArrayDeque<Integer>();
+    /** Last answer of {@link #observedSince}: every valuation asks the same question within a minute. */
+    private int observedFrom = Integer.MIN_VALUE;
+    private int observedCount;
     private int totalSales;
     private boolean dirty;
 
@@ -108,6 +111,7 @@ public final class SalesHistory {
         Integer last = observed.peekLast();
         if (last == null || minute > last) {
             observed.addLast(minute);
+            observedFrom = Integer.MIN_VALUE;
             dirty = true;
         }
     }
@@ -165,6 +169,9 @@ public final class SalesHistory {
     }
 
     private int observedSince(int fromMinute) {
+        if (fromMinute == observedFrom) {
+            return observedCount;
+        }
         int count = 0;
         Iterator<Integer> it = observed.descendingIterator();
         while (it.hasNext()) {
@@ -173,6 +180,8 @@ public final class SalesHistory {
             }
             count++;
         }
+        observedFrom = fromMinute;
+        observedCount = count;
         return count;
     }
 
@@ -202,6 +211,7 @@ public final class SalesHistory {
         while (!observed.isEmpty() && observed.peekFirst() < minMinute) {
             observed.pollFirst();
         }
+        observedFrom = Integer.MIN_VALUE;
         Iterator<Ring> it = byKey.values().iterator();
         while (it.hasNext()) {
             Ring ring = it.next();
@@ -325,6 +335,7 @@ public final class SalesHistory {
             Log.warn("File delle vendite danneggiato, riparto da zero: " + file, e);
             byKey.clear();
             observed.clear();
+            observedFrom = Integer.MIN_VALUE;
         } finally {
             if (in != null) {
                 try {

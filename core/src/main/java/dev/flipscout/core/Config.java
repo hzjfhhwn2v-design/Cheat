@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** All settings, stored in config/flipscout/flipscout.properties. */
 public final class Config {
@@ -31,6 +32,7 @@ public final class Config {
     public volatile boolean sound = true;
     public volatile long budget = 0;
     public volatile Set<String> blacklist = Collections.emptySet();
+    public volatile boolean blockedSummary = true;
     public volatile boolean debug = false;
 
     // Auction house (BIN)
@@ -70,15 +72,20 @@ public final class Config {
     public volatile long bzNpcMinProfit = 200_000;
     public volatile int bzNpcCooldownMinutes = 15;
 
-    // Sources
     // Profit tracker
     public volatile boolean trackerEnabled = true;
     public volatile boolean trackerMessages = true;
 
-    public volatile boolean sourceNeu = true;
+    // Discord
+    public volatile boolean discordEnabled = true;
+    public volatile String discordWebhook = "";
+    public volatile boolean discordAuctions = true;
+    public volatile boolean discordBazaar = false;
+    public volatile long discordMinCoins = 0;
+
+    // Sources
     public volatile boolean sourceCoflnet = true;
     public volatile String urlHypixel = "https://api.hypixel.net";
-    public volatile String urlNeu = "https://moulberry.codes";
     public volatile String urlCoflnet = "https://sky.coflnet.com";
 
     /** A named, typed setting that can be shown, parsed and saved. */
@@ -98,6 +105,11 @@ public final class Config {
         }
 
         public abstract Kind kind();
+
+        /** True for values not to be shown in chat (they would end up in screenshots). */
+        public boolean secret() {
+            return false;
+        }
 
         /** What the value may be ("10 - 600", "importo, es. 500k o 2m"), or "" when there is nothing to add. */
         public String hint() {
@@ -150,6 +162,11 @@ public final class Config {
             new ListSetting("blacklist", "Oggetti ignorati", "ID da ignorare, separati da virgola (es. HYPERION,ENCHANTMENT_SHARPNESS_6)") {
                 Set<String> read(Config c) { return c.blacklist; }
                 void write(Config c, Set<String> v) { c.blacklist = v; }
+            },
+            new BoolSetting("blockedSummary", "Riepilogo dei flip bloccati", "Dopo ogni giro di aste dice quanti flip ha nascosto"
+                + " la blacklist: passa il mouse sul messaggio per vederli") {
+                boolean read(Config c) { return c.blockedSummary; }
+                void write(Config c, boolean v) { c.blockedSummary = v; }
             },
             new BoolSetting("debug", "Log dettagliato (debug)", "Scrive più dettagli nel log del gioco") {
                 boolean read(Config c) { return c.debug; }
@@ -300,22 +317,37 @@ public final class Config {
                 boolean read(Config c) { return c.trackerMessages; }
                 void write(Config c, boolean v) { c.trackerMessages = v; }
             }),
-        new Section("Fonti dati",
-            new BoolSetting("source.neu", "Usa i prezzi di NEU", "Usa i prezzi di NotEnoughUpdates (moulberry.codes)") {
-                boolean read(Config c) { return c.sourceNeu; }
-                void write(Config c, boolean v) { c.sourceNeu = v; }
+        new Section("Discord",
+            new BoolSetting("discord.enabled", "Resoconti su Discord", "Manda acquisti, vendite e flip chiusi al webhook qui sotto") {
+                boolean read(Config c) { return c.discordEnabled; }
+                void write(Config c, boolean v) { c.discordEnabled = v; }
             },
-            new BoolSetting("source.coflnet", "Usa i prezzi di Coflnet", "Usa i prezzi di Coflnet (sky.coflnet.com) per confermare i flip") {
+            new WebhookSetting("discord.webhook", "Webhook del canale", "Indirizzo del webhook: su Discord, Modifica canale →"
+                + " Integrazioni → Webhook → Nuovo webhook → Copia URL del webhook. Vuoto = niente resoconti") {
+                String read(Config c) { return c.discordWebhook; }
+                void write(Config c, String v) { c.discordWebhook = v; }
+            },
+            new BoolSetting("discord.auctions", "Aste: acquisti e vendite", "Resoconto di ogni acquisto e vendita all'asta, con il profitto del flip") {
+                boolean read(Config c) { return c.discordAuctions; }
+                void write(Config c, boolean v) { c.discordAuctions = v; }
+            },
+            new BoolSetting("discord.bazaar", "Bazaar: acquisti e vendite", "Resoconto anche degli scambi al bazaar (possono essere tanti)") {
+                boolean read(Config c) { return c.discordBazaar; }
+                void write(Config c, boolean v) { c.discordBazaar = v; }
+            },
+            new CoinsSetting("discord.minCoins", "Importo minimo", "Non manda gli scambi sotto questo importo (0 = tutti)", 0) {
+                long read(Config c) { return c.discordMinCoins; }
+                void write(Config c, long v) { c.discordMinCoins = v; }
+            }),
+        new Section("Fonti dati",
+            new BoolSetting("source.coflnet", "Usa i dati di Coflnet", "Usa Coflnet (sky.coflnet.com) per le vendite degli oggetti rari, i volumi"
+                + " e i nomi degli oggetti del bazaar") {
                 boolean read(Config c) { return c.sourceCoflnet; }
                 void write(Config c, boolean v) { c.sourceCoflnet = v; }
             },
             new UrlSetting("url.hypixel", "Indirizzo API di Hypixel", "Indirizzo dell'API di Hypixel") {
                 String read(Config c) { return c.urlHypixel; }
                 void write(Config c, String v) { c.urlHypixel = v; }
-            },
-            new UrlSetting("url.neu", "Indirizzo dei dati NEU", "Indirizzo dei dati NEU") {
-                String read(Config c) { return c.urlNeu; }
-                void write(Config c, String v) { c.urlNeu = v; }
             },
             new UrlSetting("url.coflnet", "Indirizzo API di Coflnet", "Indirizzo dell'API di Coflnet") {
                 String read(Config c) { return c.urlCoflnet; }
@@ -341,16 +373,22 @@ public final class Config {
     }
 
     public boolean isBlacklisted(String... ids) {
+        return blacklistMatch(ids) != null;
+    }
+
+    /** The blacklist entry that matches one of {@code ids}, or null. */
+    public String blacklistMatch(String... ids) {
         Set<String> list = blacklist;
         if (list.isEmpty()) {
-            return false;
+            return null;
         }
         for (String id : ids) {
-            if (id != null && list.contains(id.toUpperCase(Locale.ROOT))) {
-                return true;
+            String upper = id == null ? null : id.toUpperCase(Locale.ROOT);
+            if (upper != null && list.contains(upper)) {
+                return upper;
             }
         }
-        return false;
+        return null;
     }
 
     /** Loads the file if it exists, then rewrites it so it always lists every option. */
@@ -381,7 +419,8 @@ public final class Config {
         save(file);
     }
 
-    public void save(File file) {
+    /** Synchronized: the settings screen and commands may save at the same time. */
+    public synchronized void save(File file) {
         File parent = file.getAbsoluteFile().getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             Log.warn("Impossibile creare la cartella " + parent);
@@ -672,6 +711,49 @@ public final class Config {
             String v = value.trim();
             if (!v.startsWith("https://") && !v.startsWith("http://")) {
                 throw new IllegalArgumentException("deve iniziare con https://");
+            }
+            write(config, v.endsWith("/") ? v.substring(0, v.length() - 1) : v);
+        }
+    }
+
+    /** A Discord webhook address, or nothing. Kept out of chat: whoever has it can post in the channel. */
+    abstract static class WebhookSetting extends Setting {
+        private static final Pattern WEBHOOK = Pattern.compile(
+            "https://(?:(?:ptb|canary)\\.)?discord(?:app)?\\.com/api(?:/v\\d+)?/webhooks/\\d+/[A-Za-z0-9_-]+/?");
+
+        WebhookSetting(String key, String label, String help) {
+            super(key, label, help);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.TEXT;
+        }
+
+        @Override
+        public boolean secret() {
+            return true;
+        }
+
+        @Override
+        public String hint() {
+            return "https://discord.com/api/webhooks/... oppure vuoto";
+        }
+
+        abstract String read(Config c);
+
+        abstract void write(Config c, String v);
+
+        @Override
+        public String get(Config config) {
+            return read(config);
+        }
+
+        @Override
+        public void set(Config config, String value) {
+            String v = value.trim();
+            if (!v.isEmpty() && !WEBHOOK.matcher(v).matches()) {
+                throw new IllegalArgumentException("serve l'indirizzo di un webhook di Discord (https://discord.com/api/webhooks/...)");
             }
             write(config, v.endsWith("/") ? v.substring(0, v.length() - 1) : v);
         }

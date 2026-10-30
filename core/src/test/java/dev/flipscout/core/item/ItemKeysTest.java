@@ -55,6 +55,13 @@ class ItemKeysTest {
             null, 1);
         assertEquals(Arrays.asList("DRILL_PART:AMBER_POLISHED_DRILL_ENGINEx1", "DRILL_PART:GOBLIN_OMELETTE_BLUE_CHEESEx1",
             "DRILL_PART:PERFECTLY_CUT_FUEL_TANKx1"), parts(ItemKeys.decode(drill, null).upgrades));
+        // Most drills on the auction house name each part both ways: still one of each.
+        String both = TestData.itemBytes(map("id", "TITANIUM_DRILL_4", "engine", map("id", "AMBER_POLISHED_DRILL_ENGINE"),
+            "drill_part_engine", "amber_polished_drill_engine", "fuel_tank", map("id", "PERFECTLY_CUT_FUEL_TANK"),
+            "drill_part_fuel_tank", "perfectly_cut_fuel_tank", "upgrade_module", map("id", "GOBLIN_OMELETTE_SUNNY_SIDE"),
+            "drill_part_upgrade_module", "goblin_omelette_sunny_side", "drill_fuel", 86124), null, 1);
+        assertEquals(Arrays.asList("DRILL_PART:AMBER_POLISHED_DRILL_ENGINEx1", "DRILL_PART:GOBLIN_OMELETTE_SUNNY_SIDEx1",
+            "DRILL_PART:PERFECTLY_CUT_FUEL_TANKx1"), parts(ItemKeys.decode(both, null).upgrades));
         String rod = TestData.itemBytes(map("id", "ROD_OF_THE_SEA", "line", map("part", "speedy_line", "uuid", "x"),
             "hook", map("part", "hotspot_hook"), "wet_book_count", 5), null, 1);
         assertEquals(Arrays.asList("ROD_PART:HOTSPOT_HOOKx1", "ROD_PART:SPEEDY_LINEx1", "WET_BOOK:WET_BOOKx5"),
@@ -112,7 +119,6 @@ class ItemKeysTest {
         }
         assertEquals(Arrays.asList("Ultimate Wise V", "10x Hot Potato Book", "Recombobulator 3000"), labels);
         assertEquals("ENCHANTMENT_ULTIMATE_WISE_5", ItemKeys.partKey("ENCHANTMENT_ULTIMATE_WISE_5").bazaarId);
-        assertEquals("ULTIMATE_WISE;5", ItemKeys.partKey("ENCHANTMENT_ULTIMATE_WISE_5").neuKey);
         assertEquals("THE_ART_OF_WAR", ItemKeys.partKey("THE_ART_OF_WAR").key);
     }
 
@@ -120,8 +126,6 @@ class ItemKeysTest {
     void plainItemUsesItsIdEverywhere() throws IOException {
         ItemKeys.Decoded d = ItemKeys.decode(TestData.plainItem("HYPERION"), "Hyperion ✪✪✪✪✪");
         assertEquals("HYPERION", d.key.key);
-        assertEquals("HYPERION", d.key.neuKey);
-        assertTrue(d.key.neuExact);
         assertEquals("HYPERION", d.key.coflTag);
         assertEquals("HYPERION", d.key.bazaarId);
         assertEquals(1, d.count);
@@ -139,10 +143,19 @@ class ItemKeysTest {
     void petsAreKeyedByTypeTierAndLevel() throws IOException {
         ItemKeys.Decoded d = ItemKeys.decode(TestData.pet("ENDER_DRAGON", "LEGENDARY", null), "[Lvl 100] Ender Dragon");
         assertEquals("PET_ENDER_DRAGON;LEGENDARY;L100", d.key.key);
-        assertEquals("ENDER_DRAGON;4", d.key.neuKey);
-        assertFalse(d.key.neuExact);
-        assertNull(d.key.coflTag);
+        // Coflnet with the same rarity, levels and (no) skin: so pets get a sales volume.
+        assertEquals("PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=100&PetSkin=None", d.key.coflTag);
         assertNull(d.key.bazaarId);
+
+        ItemKeys.Decoded young = ItemKeys.decode(TestData.pet("BLUE_WHALE", "LEGENDARY", null), "[Lvl 12] Blue Whale");
+        assertEquals("PET_BLUE_WHALE?Rarity=LEGENDARY&PetLevel=2-29&PetSkin=None", young.key.coflTag);
+        // Coflnet reads level 100 as "100 or more" for pets that level up to 200.
+        ItemKeys.Decoded golden = ItemKeys.decode(TestData.pet("GOLDEN_DRAGON", "LEGENDARY", null), "[Lvl 100] Golden Dragon");
+        assertNull(golden.key.coflTag);
+        ItemKeys.Decoded maxed = ItemKeys.decode(TestData.pet("GOLDEN_DRAGON", "LEGENDARY", null), "[Lvl 200] Golden Dragon");
+        assertEquals("PET_GOLDEN_DRAGON?Rarity=LEGENDARY&PetLevel=200&PetSkin=None", maxed.key.coflTag);
+        // No level, no comparison.
+        assertNull(ItemKeys.decode(TestData.pet("BEE", "RARE", null), "Bee").key.coflTag);
     }
 
     @Test
@@ -156,7 +169,6 @@ class ItemKeysTest {
     void singleEnchantBookMatchesTheBazaarProduct() throws IOException {
         ItemKeys.Decoded d = ItemKeys.decode(TestData.book("ultimate_wise", 5), "Enchanted Book");
         assertEquals("ENCHANTMENT_ULTIMATE_WISE_5", d.key.key);
-        assertEquals("ULTIMATE_WISE;5", d.key.neuKey);
         assertEquals("ENCHANTMENT_ULTIMATE_WISE_5", d.key.bazaarId);
         assertEquals("ENCHANTMENT_ULTIMATE_WISE_5", d.key.coflTag);
     }
@@ -166,14 +178,12 @@ class ItemKeysTest {
         ItemKeys.Decoded rune = ItemKeys.decode(
             TestData.itemBytes(map("id", "RUNE", "runes", map("MUSIC", 3)), null, 1), "◆ Music Rune III");
         assertEquals("RUNE_MUSIC_3", rune.key.key);
-        assertEquals("MUSIC_RUNE;3", rune.key.neuKey);
+        assertEquals("RUNE_MUSIC?MusicRune=3", rune.key.coflTag);
 
         ItemKeys.Decoded armor = ItemKeys.decode(TestData.itemBytes(
             map("id", "CRIMSON_CHESTPLATE", "attributes", map("mana_regeneration", 4, "mana_pool", 5)), null, 1),
             "Crimson Chestplate");
         assertEquals("CRIMSON_CHESTPLATE[MANA_POOL:5,MANA_REGENERATION:4]", armor.key.key);
-        assertEquals("CRIMSON_CHESTPLATE", armor.key.neuKey);
-        assertFalse(armor.key.neuExact);
         assertNull(armor.key.coflTag);
         assertNull(armor.key.bazaarId);
     }

@@ -21,6 +21,7 @@ final class FabricPlatform implements Platform {
     private volatile boolean onHypixel;
     private volatile boolean inSkyblock;
     private volatile String playerUuid;
+    private volatile String playerName;
     private volatile boolean configScreenWanted;
 
     /** Called on the client thread about once a second. */
@@ -31,6 +32,9 @@ final class FabricPlatform implements Platform {
         onHypixel = hypixel;
         inSkyblock = hypixel && sidebarSaysSkyblock(client);
         playerUuid = client.player != null ? client.player.getUUID().toString().replace("-", "") : null;
+        if (client.player != null) {
+            playerName = client.player.getName().getString();
+        }
     }
 
     private static boolean sidebarSaysSkyblock(Minecraft client) {
@@ -103,6 +107,11 @@ final class FabricPlatform implements Platform {
     @Override
     public String playerUuid() {
         return playerUuid;
+    }
+
+    @Override
+    public String playerName() {
+        return playerName;
     }
 
     @Override

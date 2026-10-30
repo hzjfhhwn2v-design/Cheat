@@ -54,6 +54,18 @@ public final class FakeFetcher implements HttpFetcher {
         return n;
     }
 
+    /** POST requests received: url and body. */
+    public final List<String[]> posts = new ArrayList<String[]>();
+    /** Status answered to POST requests, one per request in order; 204 once they run out. */
+    public final List<Integer> postStatuses = new ArrayList<Integer>();
+
+    @Override
+    public synchronized Response post(String url, String contentType, byte[] body) {
+        posts.add(new String[] {url, new String(body, StandardCharsets.UTF_8)});
+        int status = postStatuses.isEmpty() ? 204 : postStatuses.remove(0);
+        return new Response(status, new ByteArrayInputStream(new byte[0]), serverDate, status == 429 ? 10 : 0);
+    }
+
     @Override
     public synchronized Response get(String url) {
         requests.add(url);

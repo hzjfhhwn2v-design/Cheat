@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FlipFinderTest {
     private static final long NOW = 1_800_000_000_000L;
     private static final int NOW_MINUTE = (int) (NOW / 60_000L);
-    private static final ItemKey HYPERION = new ItemKey("HYPERION", "HYPERION", "HYPERION", true, "HYPERION", "HYPERION");
+    private static final ItemKey HYPERION = new ItemKey("HYPERION", "HYPERION", "HYPERION", "HYPERION");
 
     private final AtomicLong clock = new AtomicLong(NOW);
     private Config config;
@@ -236,16 +236,27 @@ class FlipFinderTest {
     }
 
     @Test
-    void neuLowestBinEqualToThePriceIsIgnored() {
-        Map<String, Double> lbin = new HashMap<String, Double>();
-        lbin.put("HYPERION", 800_000_000.0);
-        prices.setNeuLowestBins(lbin);
-        AuctionIndex.Listing cheap = listing("new", HYPERION, 800_000_000L, 1);
-        assertTrue(Double.isNaN(prices.valuate(HYPERION, "new", 800_000_000, false).neuLbin));
-        lbin.put("HYPERION", 1_000_000_000.0);
-        assertEquals(1_000_000_000.0, prices.valuate(HYPERION, "new", 800_000_000, false).neuLbin, 1e-3);
-        // NEU's lowest BIN alone, with no other listing of ours, is not enough for a flip.
-        assertNull(finder.evaluate(cheap, false));
+    void petsGetTheirSalesVolumeFromCoflnet() {
+        ItemKey dragon = new ItemKey("PET", "PET_ENDER_DRAGON;LEGENDARY;L100",
+            "PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=100&PetSkin=None", null);
+        index.add(listing("p1", dragon, 470_000_000L, 1));
+        index.add(listing("p2", dragon, 475_000_000L, 1));
+        index.add(listing("p3", dragon, 480_000_000L, 1));
+        String url = "https://sky.coflnet.com/api/item/price/PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=100&PetSkin=None";
+        coflnetHttp.put(url, "{\"median\":460000000,\"volume\":53.5}");
+        AuctionIndex.Listing cheap = listing("cheap", dragon, 380_000_000L, 1);
+        // Our own few sales of this pet tell nothing about its volume: Coflnet is asked.
+        assertTrue(prices.needsRemoteSales(dragon));
+        AuctionFlip flip = finder.evaluate(cheap, true);
+        assertNotNull(flip);
+        assertEquals(53.5, flip.valuation.volumePerDay, 1e-9);
+        assertEquals("Coflnet", flip.valuation.volumeSource);
+        assertEquals(460_000_000, flip.resale, 1e-3);
+        assertFalse(flip.weak);
+        assertEquals(1, coflnetHttp.count(url));
+        // Known now: not asked again, and no longer missing.
+        assertFalse(prices.needsRemoteSales(dragon));
+        assertFalse(prices.wouldUseRemote(dragon, flip.valuation));
     }
 
     @Test
@@ -267,8 +278,7 @@ class FlipFinderTest {
     @Test
     void bazaarItemsOnTheAuctionHouse() throws IOException {
         config.ahMinProfit = 1_000;
-        ItemKey diamond = new ItemKey("ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND", true,
-            "ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND");
+        ItemKey diamond = new ItemKey("ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND", "ENCHANTED_DIAMOND");
         prices.setBazaar(snapshot(TestData.product("ENCHANTED_DIAMOND", new double[][] {{210, 100}},
             new double[][] {{200, 100}}, 1000, 1000)));
         AuctionIndex.Listing stack = listing("stack", diamond, 64 * 100L, 64);

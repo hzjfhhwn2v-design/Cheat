@@ -35,37 +35,48 @@ public final class BazaarFlipFinder {
 
     /** Every opportunity that meets the thresholds, best first. Cooldowns are not applied here. */
     public List<BazaarFlip> find(BazaarSnapshot snapshot, BazaarHistory history, ItemCatalog items, long now) {
+        return find(snapshot, history, items, now, null);
+    }
+
+    /**
+     * Like {@link #find(BazaarSnapshot, BazaarHistory, ItemCatalog, long)}; the opportunities of
+     * blacklisted products go into {@code blocked} when it is not null.
+     */
+    public List<BazaarFlip> find(BazaarSnapshot snapshot, BazaarHistory history, ItemCatalog items, long now,
+                                 List<BazaarFlip> blocked) {
         List<BazaarFlip> out = new ArrayList<BazaarFlip>();
         double tax = config.bzTax / 100.0;
         for (BazaarProduct product : snapshot.products.values()) {
+            List<BazaarFlip> target = out;
             if (config.isBlacklisted(product.id)) {
-                continue;
+                if (blocked == null) {
+                    continue;
+                }
+                target = blocked;
             }
             double instaBuy = product.instaBuy();
             if (!(instaBuy > 0)) {
                 continue;
             }
+            double baseline = config.bzFlipEnabled || config.bzCrashEnabled ? history.baselineInstaBuy(product.id, now) : 0;
             if (config.bzFlipEnabled) {
-                BazaarFlip flip = orderFlip(product, history.baselineInstaBuy(product.id, now), items, tax);
-                if (flip != null) {
-                    out.add(flip);
-                }
+                add(target, orderFlip(product, baseline, items, tax));
             }
             if (config.bzCrashEnabled) {
-                BazaarFlip flip = crash(product, history.baselineInstaBuy(product.id, now), items, tax);
-                if (flip != null) {
-                    out.add(flip);
-                }
+                add(target, crash(product, baseline, items, tax));
             }
             if (config.bzNpcEnabled) {
-                BazaarFlip flip = npcFlip(product, items);
-                if (flip != null) {
-                    out.add(flip);
-                }
+                add(target, npcFlip(product, items));
             }
         }
         Collections.sort(out, BY_PROFIT);
         return out;
+    }
+
+    private static void add(List<BazaarFlip> list, BazaarFlip flip) {
+        if (flip != null) {
+            list.add(flip);
+        }
     }
 
     private BazaarFlip orderFlip(BazaarProduct product, double baseline, ItemCatalog items, double tax) {

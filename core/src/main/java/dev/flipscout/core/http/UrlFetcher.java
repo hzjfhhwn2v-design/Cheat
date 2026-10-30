@@ -4,6 +4,7 @@ import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.zip.GZIPInputStream;
@@ -25,6 +26,23 @@ public final class UrlFetcher implements HttpFetcher {
 
     @Override
     public Response get(String url) throws IOException {
+        return response(open(url));
+    }
+
+    @Override
+    public Response post(String url, String contentType, byte[] body) throws IOException {
+        HttpURLConnection connection = open(url);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", contentType);
+        connection.setFixedLengthStreamingMode(body.length);
+        try (OutputStream out = connection.getOutputStream()) {
+            out.write(body);
+        }
+        return response(connection);
+    }
+
+    private HttpURLConnection open(String url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
         if (socketFactory != null && connection instanceof HttpsURLConnection) {
             ((HttpsURLConnection) connection).setSSLSocketFactory(socketFactory);
@@ -34,6 +52,10 @@ public final class UrlFetcher implements HttpFetcher {
         connection.setRequestProperty("User-Agent", userAgent);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("Accept-Encoding", "gzip");
+        return connection;
+    }
+
+    private static Response response(HttpURLConnection connection) throws IOException {
         int status = connection.getResponseCode();
         InputStream in = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
         if (in == null) {
@@ -65,7 +87,8 @@ public final class UrlFetcher implements HttpFetcher {
             return 0;
         }
         try {
-            return Long.parseLong(value.trim()) * 1000L;
+            // Seconds; Discord sends fractions ("0.75").
+            return (long) Math.ceil(Double.parseDouble(value.trim()) * 1000.0);
         } catch (NumberFormatException e) {
             return 0;
         }

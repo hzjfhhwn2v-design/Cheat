@@ -28,12 +28,10 @@ public final class Valuation {
     /** Cheapest other BIN of the same key in our own index. */
     public double lbinOther = Double.NaN;
     public int otherListings;
-    public double neuLbin = Double.NaN;
 
     /** Median of BIN sales we recorded ourselves. */
     public double salesMedian = Double.NaN;
     public int salesSamples;
-    public double neuAverage = Double.NaN;
     public double coflMedian = Double.NaN;
 
     public double volumePerDay = Double.NaN;
@@ -52,30 +50,14 @@ public final class Valuation {
     public final List<Part> upgradeParts = new ArrayList<Part>();
 
     public double lbinReference() {
-        return !Double.isNaN(lbinOther) ? lbinOther : neuLbin;
-    }
-
-    public String lbinSource() {
-        return !Double.isNaN(lbinOther) ? "Hypixel" : !Double.isNaN(neuLbin) ? "NEU" : null;
+        return lbinOther;
     }
 
     public double salesReference() {
-        if (!Double.isNaN(salesMedian)) {
-            return salesMedian;
-        }
-        if (!Double.isNaN(neuAverage)) {
-            return neuAverage;
-        }
-        return coflMedian;
+        return !Double.isNaN(salesMedian) ? salesMedian : coflMedian;
     }
 
     public String salesSource() {
-        if (!Double.isNaN(salesMedian)) {
-            return "Hypixel";
-        }
-        if (!Double.isNaN(neuAverage)) {
-            return "NEU";
-        }
-        return !Double.isNaN(coflMedian) ? "Coflnet" : null;
+        return !Double.isNaN(salesMedian) ? "Hypixel" : !Double.isNaN(coflMedian) ? "Coflnet" : null;
     }
 }

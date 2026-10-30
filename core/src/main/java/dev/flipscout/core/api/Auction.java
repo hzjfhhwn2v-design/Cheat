@@ -6,6 +6,10 @@ import dev.flipscout.core.item.ItemKeys;
 public final class Auction {
     public String uuid;
     public String seller;
+    /** Profile the auction was created on. */
+    public String profileId;
+    /** Members of that profile, the seller included (UUIDs without dashes); null when missing. */
+    public String[] coop;
     public String itemName;
     public String tier;
     public String category;

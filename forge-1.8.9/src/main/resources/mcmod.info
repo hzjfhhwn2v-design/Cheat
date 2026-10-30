@@ -2,7 +2,7 @@
   {
     "modid": "flipscout",
     "name": "FlipScout",
-    "description": "Notifiche dei flip di aste e bazaar di Hypixel SkyBlock con i dati dell'API ufficiale, di NEU e di Coflnet. Non compra niente da solo.",
+    "description": "Notifiche dei flip di aste e bazaar di Hypixel SkyBlock con i dati dell'API ufficiale e di Coflnet, conto dei guadagni e resoconti su Discord. Non compra niente da solo.",
     "version": "${version}",
     "mcversion": "1.8.9",
     "authorList": ["FlipScout"],

@@ -9,20 +9,17 @@ public final class ItemKey {
     public final String id;
     /** Grouping key for our own data: more specific than {@link #id} for pets, books, runes... */
     public final String key;
-    /** NEU internal name used by moulberry.codes, or null. */
-    public final String neuKey;
-    /** True when {@link #neuKey} means exactly the same thing as {@link #key}. */
-    public final boolean neuExact;
-    /** Coflnet item tag, or null when Coflnet prices would not be comparable. */
+    /**
+     * Coflnet item tag, with filters when the tag alone is too broad ("PET_X?Rarity=...&PetLevel=..."),
+     * or null when Coflnet prices would not be comparable.
+     */
     public final String coflTag;
     /** Bazaar product id for this item, or null. */
     public final String bazaarId;
 
-    public ItemKey(String id, String key, String neuKey, boolean neuExact, String coflTag, String bazaarId) {
+    public ItemKey(String id, String key, String coflTag, String bazaarId) {
         this.id = id;
         this.key = key;
-        this.neuKey = neuKey;
-        this.neuExact = neuExact;
         this.coflTag = coflTag;
         this.bazaarId = bazaarId;
     }
@@ -36,8 +33,7 @@ public final class ItemKey {
             return false;
         }
         ItemKey other = (ItemKey) o;
-        return key.equals(other.key) && eq(neuKey, other.neuKey) && neuExact == other.neuExact
-            && eq(coflTag, other.coflTag) && eq(bazaarId, other.bazaarId) && id.equals(other.id);
+        return key.equals(other.key) && eq(coflTag, other.coflTag) && eq(bazaarId, other.bazaarId) && id.equals(other.id);
     }
 
     @Override

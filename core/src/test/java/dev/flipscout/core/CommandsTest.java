@@ -186,6 +186,34 @@ class CommandsTest {
     }
 
     @Test
+    void discordWebhookIsCheckedAndNeverShownInChat() {
+        String webhook = "https://discord.com/api/webhooks/1234567890/SecretToken_abc-123";
+        run("set", "discord.webhook", "https://example.com/hook");
+        assertEquals("", flipScout.config().discordWebhook);
+        assertTrue(platform.allText().contains("webhook di Discord"), platform.allText());
+        run("set", "discord.webhook", webhook);
+        assertEquals(webhook, flipScout.config().discordWebhook);
+        run("config", "discord");
+        run("discord");
+        run("status");
+        String text = platform.allText();
+        assertFalse(text.contains("SecretToken"), text);
+        assertTrue(text.contains("impostato"), text);
+        assertTrue(text.contains("Resoconti su Discord"), text);
+        // No value empties it, which switches the reports off.
+        run("set", "discord.webhook");
+        assertEquals("", flipScout.config().discordWebhook);
+        run("set", "discord.webhook", "https://canary.discord.com/api/v10/webhooks/1/abc/");
+        assertEquals("https://canary.discord.com/api/v10/webhooks/1/abc", flipScout.config().discordWebhook);
+    }
+
+    @Test
+    void coopCommandExplainsHowMembersAreFound() {
+        run("coop");
+        assertTrue(platform.allText().contains("Nessun membro della coop"), platform.allText());
+    }
+
+    @Test
     void testNotificationHasHoverAndClick() {
         run("test");
         Msg sample = platform.messages.get(platform.messages.size() - 1);

@@ -4,9 +4,14 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 
-/** Minimal HTTP GET abstraction so the APIs can be tested without a network. */
+/** Minimal HTTP abstraction so the APIs can be tested without a network. */
 public interface HttpFetcher {
     Response get(String url) throws IOException;
+
+    /** Sends {@code body} with POST (for Discord webhooks). */
+    default Response post(String url, String contentType, byte[] body) throws IOException {
+        throw new IOException("POST non supportato");
+    }
 
     final class Response implements Closeable {
         public final int status;

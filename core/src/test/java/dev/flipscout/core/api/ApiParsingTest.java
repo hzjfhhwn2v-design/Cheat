@@ -5,6 +5,7 @@ import dev.flipscout.core.TestData;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -133,25 +134,6 @@ class ApiParsingTest {
     }
 
     @Test
-    void neuFiles() throws IOException {
-        String base = "https://moulberry.codes";
-        FakeFetcher http = new FakeFetcher()
-            .put(base + "/lowestbin.json", "{\"HYPERION\":9.0E8,\"ENDER_DRAGON;4\":650000000,\"BAD\":\"x\"}")
-            .put(base + "/auction_averages/3day.json", "{\"HYPERION\":{\"price\":950000000.0,\"count\":30,\"sales\":12,"
-                + "\"clean_price\":910000000.0,\"clean_sales\":9},\"OLD\":12.5}");
-        NeuApi neu = new NeuApi(http, () -> base);
-        Map<String, Double> lbin = neu.fetchLowestBins();
-        assertEquals(900_000_000.0, lbin.get("HYPERION"), 1e-3);
-        assertEquals(650_000_000.0, lbin.get("ENDER_DRAGON;4"), 1e-3);
-        assertNull(lbin.get("BAD"));
-        Map<String, NeuApi.Average> averages = neu.fetchAverages();
-        assertEquals(910_000_000.0, averages.get("HYPERION").price, 1e-3);
-        assertEquals(4.0, averages.get("HYPERION").salesPerDay, 1e-9);
-        assertEquals(12.5, averages.get("OLD").price, 1e-9);
-        assertTrue(Double.isNaN(averages.get("OLD").salesPerDay));
-    }
-
-    @Test
     void coflnetPrice() throws IOException {
         String base = "https://sky.coflnet.com";
         FakeFetcher http = new FakeFetcher()
@@ -163,5 +145,68 @@ class ApiParsingTest {
         assertEquals(7.5, price.volume, 1e-9);
         assertNull(api.fetchPrice("JUNK"));
         assertNull(api.fetchPrice("MISSING"));
+        // An unknown tag is a 400 on Coflnet: no data, not an error.
+        http.put(base + "/api/item/price/UNKNOWN", 400, "{\"slug\":\"item_not_found\"}");
+        assertNull(api.fetchPrice("UNKNOWN"));
+    }
+
+    @Test
+    void itemIdsFromNamesInChat() {
+        Map<String, ItemCatalog.Info> items = new HashMap<String, ItemCatalog.Info>();
+        items.put("HYPERION", new ItemCatalog.Info("HYPERION", "Hyperion", "LEGENDARY", 0));
+        items.put("NECRON_BLADE", new ItemCatalog.Info("NECRON_BLADE", "Necron's Blade (Unrefined)", "LEGENDARY", 0));
+        items.put("GRAPPLING_HOOK", new ItemCatalog.Info("GRAPPLING_HOOK", "Grappling Hook", "UNCOMMON", 0));
+        Map<String, String> names = new HashMap<String, String>();
+        names.put("SHARD_BIRRIES", "Birries Shard");
+        names.put("ENCHANTMENT_ULTIMATE_WISE_5", "ultimate wise 5 enchant");
+        ItemCatalog catalog = new ItemCatalog(items).withNames(names);
+        assertEquals("HYPERION", catalog.idForName("Hyperion"));
+        assertEquals("HYPERION", catalog.idForName("§dHeroic Hyperion §6✪✪✪✪✪§c➎"));
+        assertEquals("GRAPPLING_HOOK", catalog.idForName("Grappling Hook"));
+        assertEquals("SHARD_BIRRIES", catalog.idForName("Birries Shard"));
+        assertEquals("PET_ENDER_DRAGON", catalog.idForName("[Lvl 100] Ender Dragon"));
+        assertNull(catalog.idForName("Something Unknown"));
+        assertNull(catalog.idForName(""));
+    }
+
+    @Test
+    void coflnetFiltersAreEncodedOneByOne() throws IOException {
+        assertEquals("/api/item/price/PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=90-99&PetSkin=None",
+            CoflnetApi.pricePath("PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=90-99&PetSkin=None"));
+        assertEquals("/api/item/price/HYPERION", CoflnetApi.pricePath("HYPERION"));
+        String base = "https://sky.coflnet.com";
+        FakeFetcher http = new FakeFetcher().put(base + "/api/item/price/PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=100"
+            + "&PetSkin=None", "{\"median\":460000000,\"volume\":50}");
+        CoflnetApi.Price price = new CoflnetApi(http, () -> base)
+            .fetchPrice("PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=100&PetSkin=None");
+        assertEquals(460_000_000.0, price.median, 1e-3);
+        assertEquals(50.0, price.volume, 1e-9);
+    }
+
+    @Test
+    void coflnetNamesFillTheGapsOfTheItemList() throws IOException {
+        String base = "https://sky.coflnet.com";
+        FakeFetcher http = new FakeFetcher().put(base + "/api/items", "[{\"name\":\"Birries Shard\",\"tag\":\"SHARD_BIRRIES\","
+            + "\"flags\":\"BAZAAR\"},{\"name\":\"Loch Emperor Shard\",\"tag\":\"SHARD_SEA_EMPEROR\"},"
+            + "{\"name\":\"duplex 1 enchant\",\"tag\":\"ENCHANTMENT_ULTIMATE_REITERATE_1\"},"
+            + "{\"name\":\"FACTION_RABBIT_WALKER\",\"tag\":\"FACTION_RABBIT_WALKER\"},"
+            + "{\"name\":\"§4Sin§5seeker Scythe\",\"tag\":\"SINSEEKER_SCYTHE\"},{\"name\":null,\"tag\":\"PET_BEE\"}]");
+        Map<String, String> names = new CoflnetApi(http, () -> base).fetchItemNames();
+        assertEquals("Birries Shard", names.get("SHARD_BIRRIES"));
+        assertEquals("Sinseeker Scythe", names.get("SINSEEKER_SCYTHE"));
+        // A name that is just the tag says nothing.
+        assertNull(names.get("FACTION_RABBIT_WALKER"));
+        assertNull(names.get("PET_BEE"));
+
+        ItemCatalog catalog = new ItemCatalog(new HashMap<String, ItemCatalog.Info>()).withNames(names);
+        // The bug: /bz "Shard Birries" found nothing.
+        assertEquals("Birries Shard", catalog.bazaarSearch("SHARD_BIRRIES"));
+        assertEquals("Loch Emperor Shard", catalog.displayName("SHARD_SEA_EMPEROR"));
+        // Enchantments named differently in game.
+        assertEquals("Duplex I", catalog.displayName("ENCHANTMENT_ULTIMATE_REITERATE_1"));
+        assertEquals("Duplex", catalog.bazaarSearch("ENCHANTMENT_ULTIMATE_REITERATE_1"));
+        // Without Coflnet's name a shard is still "<X> Shard".
+        assertEquals("Mist Shard", catalog.bazaarSearch("SHARD_MIST"));
+        assertEquals("Faction Rabbit Walker", catalog.displayName("FACTION_RABBIT_WALKER"));
     }
 }

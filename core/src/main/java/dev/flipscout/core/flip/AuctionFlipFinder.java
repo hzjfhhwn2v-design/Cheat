@@ -36,6 +36,16 @@ public final class AuctionFlipFinder {
         if (config.isBlacklisted(key.id, key.key)) {
             return null;
         }
+        return evaluateAnyway(listing, allowRemote);
+    }
+
+    /** What {@link #evaluate} would say if the item were not blacklisted (local data only). */
+    public AuctionFlip evaluateBlacklisted(AuctionIndex.Listing listing) {
+        return evaluateAnyway(listing, false);
+    }
+
+    private AuctionFlip evaluateAnyway(AuctionIndex.Listing listing, boolean allowRemote) {
+        ItemKey key = listing.key;
         if (config.budget > 0 && listing.price > config.budget) {
             return null;
         }

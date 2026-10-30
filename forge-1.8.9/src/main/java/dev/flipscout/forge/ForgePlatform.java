@@ -22,6 +22,7 @@ final class ForgePlatform implements Platform {
     private volatile boolean onHypixel;
     private volatile boolean inSkyblock;
     private volatile String playerUuid;
+    private volatile String playerName;
     private volatile boolean configScreenWanted;
 
     /** Called on the client thread about once a second. */
@@ -33,6 +34,7 @@ final class ForgePlatform implements Platform {
         onHypixel = hypixel;
         inSkyblock = hypixel && sidebarSaysSkyblock(mc);
         playerUuid = mc.thePlayer != null ? mc.thePlayer.getUniqueID().toString().replace("-", "") : null;
+        playerName = mc.getSession() != null ? mc.getSession().getUsername() : null;
     }
 
     private static boolean sidebarSaysSkyblock(Minecraft mc) {
@@ -121,6 +123,11 @@ final class ForgePlatform implements Platform {
     @Override
     public String playerUuid() {
         return playerUuid;
+    }
+
+    @Override
+    public String playerName() {
+        return playerName;
     }
 
     @Override

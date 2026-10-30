@@ -76,6 +76,18 @@ public final class Text {
         return sb.toString();
     }
 
+    /** "bobbin' time" -> "Bobbin' Time": capitals at the start of each word, the rest as it was. */
+    public static String titleWords(String text) {
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean start = true;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            sb.append(start ? Character.toUpperCase(c) : c);
+            start = c == ' ';
+        }
+        return sb.toString();
+    }
+
     public static String roman(int n) {
         if (n <= 0 || n >= 4000) {
             return String.valueOf(n);

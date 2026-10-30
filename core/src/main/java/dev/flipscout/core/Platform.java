@@ -20,6 +20,9 @@ public interface Platform {
     /** UUID of the local player, lowercase without dashes, or null when unknown. */
     String playerUuid();
 
+    /** Name of the local player, or null when unknown. */
+    String playerName();
+
     /**
      * Opens the settings screen. Called from a command, so the screen should open on the next
      * client tick: otherwise closing the chat would close it straight away.

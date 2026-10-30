@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class NotifierTest {
     @Test
     void upgradeFlipsShowWhatTheUpgradesAreWorth() {
-        ItemKey key = new ItemKey("HYPERION", "HYPERION", "HYPERION", true, "HYPERION", "HYPERION");
+        ItemKey key = new ItemKey("HYPERION", "HYPERION", "HYPERION", "HYPERION");
         Upgrades upgrades = ItemKeys.upgrades("HYPERION", TestData.map("rarity_upgrades", 1));
         AuctionIndex.Listing listing = new AuctionIndex.Listing("u", "s", "Hyperion", "LEGENDARY", key, 850_000_000L, 1,
             0, 0, 0, 0, upgrades);

@@ -171,6 +171,53 @@ public final class ProfitTracker {
         }
     }
 
+    /** A purchase or sale recognised in chat, with the flip a sale closed: for the Discord report. */
+    public static final class Event {
+        public enum Kind { AUCTION_BOUGHT, AUCTION_SOLD, BAZAAR_BOUGHT, BAZAAR_SOLD }
+
+        public final Kind kind;
+        public final String item;
+        public final int amount;
+        /** Coins paid, or the sale price before fees. */
+        public final double coins;
+        /** Sales: coins received after fees. */
+        public final double net;
+        /** Auction sales: the buyer; null otherwise. */
+        public final String player;
+        /** An auction that sold while you were away, reported when you collected the coins. */
+        public final boolean whileAway;
+        /** The flip this sale closed, or null. */
+        public final Flip flip;
+        public final double sessionProfit;
+        public final boolean sessionPaused;
+        public final double todayProfit;
+        public final long time;
+
+        Event(Kind kind, String item, int amount, double coins, double net, String player, boolean whileAway, Flip flip,
+              double sessionProfit, boolean sessionPaused, double todayProfit, long time) {
+            this.kind = kind;
+            this.item = item;
+            this.amount = amount;
+            this.coins = coins;
+            this.net = net;
+            this.player = player;
+            this.whileAway = whileAway;
+            this.flip = flip;
+            this.sessionProfit = sessionProfit;
+            this.sessionPaused = sessionPaused;
+            this.todayProfit = todayProfit;
+            this.time = time;
+        }
+
+        public boolean isSale() {
+            return kind == Kind.AUCTION_SOLD || kind == Kind.BAZAAR_SOLD;
+        }
+
+        public boolean isAuction() {
+            return kind == Kind.AUCTION_BOUGHT || kind == Kind.AUCTION_SOLD;
+        }
+    }
+
     /** An auction that sold while you were online and whose coins you have not collected yet. */
     public static final class Unclaimed {
         public final String item;
@@ -195,6 +242,7 @@ public final class ProfitTracker {
     private final Consumer<Runnable> async;
     /** Held while writing the file, so saves never interleave. Taken before the tracker's own lock. */
     private final Object fileLock = new Object();
+    private volatile Consumer<Event> listener;
 
     private long since;
     private Stats total = new Stats();
@@ -213,6 +261,10 @@ public final class ProfitTracker {
     /** Unit price of the last buy order placed per item, for orders flipped into sell offers. */
     private final LinkedHashMap<String, Double> orderPrices = new LinkedHashMap<String, Double>();
     private boolean dirty;
+    /** What the trade being recorded produced for the listener; guarded by this. */
+    private Event event;
+    /** The flip closed by the last sale recorded, or null; guarded by this. */
+    private Flip lastSale;
 
     /** @param async runs a task off the calling thread (for saving) */
     public ProfitTracker(Config config, File file, LongSupplier clock, Platform platform, Consumer<Runnable> async) {
@@ -227,6 +279,11 @@ public final class ProfitTracker {
         sessionRunningSince = now;
     }
 
+    /** Called with every trade recorded (on the chat thread: it should hand slow work off). */
+    public void setListener(Consumer<Event> listener) {
+        this.listener = listener;
+    }
+
     // ---- Chat ----
 
     /** Handles one chat line from the server. */
@@ -239,12 +296,24 @@ public final class ProfitTracker {
             return;
         }
         Msg message;
+        Event recorded;
         synchronized (this) {
+            event = null;
             message = record(trade, clock.getAsLong());
+            recorded = event;
+            event = null;
             dirty = true;
         }
         if (message != null && config.trackerMessages) {
             platform.showMessage(message);
+        }
+        Consumer<Event> l = listener;
+        if (recorded != null && l != null) {
+            try {
+                l.accept(recorded);
+            } catch (RuntimeException e) {
+                Log.warn("Errore nel resoconto di uno scambio", e);
+            }
         }
         async.accept(this::save);
     }
@@ -254,9 +323,11 @@ public final class ProfitTracker {
         switch (t.kind) {
             case AUCTION_BOUGHT:
                 buy(t, now);
+                report(Event.Kind.AUCTION_BOUGHT, t, t.coins, false, null, now);
                 return Msg.prefixed("§7Acquisto registrato: §f" + t.item + " §7per §6" + Coins.compact(t.coins));
             case BAZAAR_BOUGHT:
                 buy(t, now);
+                report(Event.Kind.BAZAAR_BOUGHT, t, t.coins, false, null, now);
                 return null;
             case BAZAAR_ORDER_PLACED:
                 orderPrices.remove(normalize(t.item));
@@ -275,9 +346,13 @@ public final class ProfitTracker {
                 }
                 return null;
             }
-            case AUCTION_SOLD:
+            case AUCTION_SOLD: {
                 unclaimed.add(new Unclaimed(t.item, playerName(t.player), t.coins, now));
-                return sell(t.item, t.amount, t.coins - Fees.auctionSellFees(t.coins, config), now, true);
+                double net = t.coins - Fees.auctionSellFees(t.coins, config);
+                Msg message = sell(t.item, t.amount, net, now, true);
+                report(Event.Kind.AUCTION_SOLD, t, net, false, lastSale, now);
+                return message;
+            }
             case AUCTION_COLLECTED: {
                 if (claim(t)) {
                     // Already counted when it sold.
@@ -286,12 +361,25 @@ public final class ProfitTracker {
                 // Sold while you were away. Above 1M the collected coins are after the claim tax.
                 double claimTax = Math.min(config.ahFeeClaim / 100.0, 0.5);
                 double gross = t.coins >= 1_000_000 * (1 - claimTax) ? t.coins / (1 - claimTax) : t.coins;
-                return sell(t.item, t.amount, gross - Fees.auctionSellFees(gross, config), now, true);
+                double net = gross - Fees.auctionSellFees(gross, config);
+                Msg message = sell(t.item, t.amount, net, now, true);
+                report(Event.Kind.AUCTION_SOLD, new TradeParser.Trade(t.kind, t.item, t.amount, gross, t.player), net,
+                    true, lastSale, now);
+                return message;
             }
-            default:
+            default: {
                 // Bazaar sales report the coins you received, tax already taken.
-                return sell(t.item, t.amount, t.coins, now, false);
+                Msg message = sell(t.item, t.amount, t.coins, now, false);
+                report(Event.Kind.BAZAAR_SOLD, t, t.coins, false, lastSale, now);
+                return message;
+            }
         }
+    }
+
+    /** Prepares the listener's event for the trade being recorded. */
+    private void report(Event.Kind kind, TradeParser.Trade t, double net, boolean whileAway, Flip flip, long now) {
+        event = new Event(kind, t.item, t.amount, t.coins, net, t.player == null ? null : playerName(t.player), whileAway,
+            flip, session.profit, sessionRunningSince == 0, day(now).profit, now);
     }
 
     private void buy(final TradeParser.Trade t, long now) {
@@ -312,8 +400,12 @@ public final class ProfitTracker {
         });
     }
 
-    /** Matches a sale with the oldest purchases of the item and returns the chat message for it. */
+    /**
+     * Matches a sale with the oldest purchases of the item and returns the chat message for it.
+     * The flip it closed, if any, is left in {@link #lastSale}.
+     */
     private Msg sell(final String item, final int amount, final double netRevenue, long now, boolean auction) {
+        lastSale = null;
         int units = 0;
         double cost = 0;
         long boughtAt = 0;
@@ -356,7 +448,8 @@ public final class ProfitTracker {
             return auction ? Msg.prefixed("§7Vendita di §f" + item
                 + " §7registrata, ma non ho visto l'acquisto: non conta nel profitto.") : null;
         }
-        flips.addFirst(new Flip(item, matched, cost, revenue, profit, boughtAt, now));
+        lastSale = new Flip(item, matched, cost, revenue, profit, boughtAt, now);
+        flips.addFirst(lastSale);
         while (flips.size() > MAX_FLIPS) {
             flips.removeLast();
         }

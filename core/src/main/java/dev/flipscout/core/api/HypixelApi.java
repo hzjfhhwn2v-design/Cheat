@@ -115,6 +115,12 @@ public final class HypixelApi {
                 case "auctioneer":
                     a.seller = Json.readString(in);
                     break;
+                case "profile_id":
+                    a.profileId = Json.readString(in);
+                    break;
+                case "coop":
+                    a.coop = readStrings(in);
+                    break;
                 case "item_name":
                     a.itemName = Json.readString(in);
                     break;
@@ -219,6 +225,9 @@ public final class HypixelApi {
                 case "buyer":
                     e.buyer = Json.readString(in);
                     break;
+                case "buyer_profile":
+                    e.buyerProfile = Json.readString(in);
+                    break;
                 case "timestamp":
                     e.timestamp = Json.readLong(in, 0);
                     break;
@@ -237,6 +246,24 @@ public final class HypixelApi {
         }
         in.endObject();
         return e.auctionId == null ? null : e;
+    }
+
+    /** An array of strings; null when the value is something else. */
+    private static String[] readStrings(JsonReader in) throws IOException {
+        if (in.peek() != JsonToken.BEGIN_ARRAY) {
+            in.skipValue();
+            return null;
+        }
+        List<String> values = new ArrayList<String>(4);
+        in.beginArray();
+        while (in.hasNext()) {
+            String value = Json.readString(in);
+            if (value != null) {
+                values.add(value);
+            }
+        }
+        in.endArray();
+        return values.toArray(new String[0]);
     }
 
     /** item_bytes is a plain string here, but some endpoints wrap it as {"type":0,"data":"..."}. */

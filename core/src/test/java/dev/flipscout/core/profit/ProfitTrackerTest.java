@@ -7,10 +7,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProfitTrackerTest {
@@ -35,6 +38,60 @@ class ProfitTrackerTest {
 
     private void chat(String line) {
         tracker.onChat(line);
+    }
+
+    @Test
+    void everyTradeIsReportedToTheListenerOnce() {
+        List<ProfitTracker.Event> events = new ArrayList<ProfitTracker.Event>();
+        tracker.setListener(events::add);
+        chat("You purchased Hyperion for 800,000,000 coins!");
+        clock.addAndGet(3_600_000L);
+        chat("[Auction] [MVP+] Bob bought Hyperion for 900,000,000 coins CLICK");
+        // Collecting what was already reported is not a new trade.
+        chat("You collected 891,000,000 coins from selling Hyperion to [MVP+] Bob in an auction!");
+        chat("[Bazaar] Bought 64x Enchanted Diamond for 10,000 coins!");
+        chat("[Bazaar] Buy Order Setup! 64x Coal for 128 coins.");
+        assertEquals(3, events.size());
+
+        ProfitTracker.Event bought = events.get(0);
+        assertEquals(ProfitTracker.Event.Kind.AUCTION_BOUGHT, bought.kind);
+        assertEquals("Hyperion", bought.item);
+        assertEquals(800_000_000, bought.coins, 1e-6);
+        assertNull(bought.flip);
+
+        ProfitTracker.Event sold = events.get(1);
+        assertEquals(ProfitTracker.Event.Kind.AUCTION_SOLD, sold.kind);
+        assertEquals("Bob", sold.player);
+        assertEquals(900_000_000, sold.coins, 1e-6);
+        assertEquals(868_500_000, sold.net, 1);
+        assertEquals(68_500_000, sold.flip.profit, 1);
+        assertEquals(68_500_000, sold.sessionProfit, 1);
+        assertEquals(68_500_000, sold.todayProfit, 1);
+        assertFalse(sold.whileAway);
+
+        assertEquals(ProfitTracker.Event.Kind.BAZAAR_BOUGHT, events.get(2).kind);
+        assertEquals(64, events.get(2).amount);
+    }
+
+    @Test
+    void salesMadeWhileAwayAreReportedWhenCollected() {
+        List<ProfitTracker.Event> events = new ArrayList<ProfitTracker.Event>();
+        tracker.setListener(events::add);
+        chat("You purchased Hyperion for 800,000,000 coins!");
+        chat("You collected 891,000,000 coins from selling Hyperion to [MVP+] Bob in an auction!");
+        ProfitTracker.Event sold = events.get(1);
+        assertTrue(sold.whileAway);
+        assertEquals(900_000_000, sold.coins, 1);
+        assertEquals(68_500_000, sold.flip.profit, 1);
+    }
+
+    @Test
+    void aBrokenListenerDoesNotBreakTheTracker() {
+        tracker.setListener(event -> {
+            throw new IllegalStateException("boom");
+        });
+        chat("You purchased Hyperion for 800,000,000 coins!");
+        assertEquals(1, tracker.lots().size());
     }
 
     @Test

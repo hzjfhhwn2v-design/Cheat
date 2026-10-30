@@ -11,6 +11,7 @@ public final class FakePlatform implements Platform {
     public volatile boolean onHypixel = true;
     public volatile boolean inSkyblock = true;
     public volatile String uuid;
+    public volatile String name = "Tester";
 
     @Override
     public synchronized void showMessage(Msg message) {
@@ -40,6 +41,11 @@ public final class FakePlatform implements Platform {
     @Override
     public String playerUuid() {
         return uuid;
+    }
+
+    @Override
+    public String playerName() {
+        return name;
     }
 
     @Override

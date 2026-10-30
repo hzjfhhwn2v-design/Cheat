@@ -5,19 +5,17 @@ import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.BazaarSnapshot;
 import dev.flipscout.core.api.CoflnetApi;
 import dev.flipscout.core.api.ItemCatalog;
-import dev.flipscout.core.api.NeuApi;
 import dev.flipscout.core.item.ItemKey;
 import dev.flipscout.core.item.ItemKeys;
 import dev.flipscout.core.item.Upgrades;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
-/** Combines our own data, NEU, Coflnet and the bazaar into one {@link Valuation}. */
+/** Combines our own data, Coflnet and the bazaar into one {@link Valuation}. */
 public final class PriceService {
     /** Upgrades worth less than this (most enchantments, a few cheap gems) are noise. */
     private static final double MIN_PART_VALUE = 100_000;
@@ -29,8 +27,6 @@ public final class PriceService {
     private final CoflnetSource coflnet;
     private final LongSupplier clock;
 
-    private volatile Map<String, Double> neuLowestBins = Collections.emptyMap();
-    private volatile Map<String, NeuApi.Average> neuAverages = Collections.emptyMap();
     private volatile BazaarSnapshot bazaar;
     /** For star costs. */
     private volatile ItemCatalog catalog = ItemCatalog.EMPTY;
@@ -45,14 +41,6 @@ public final class PriceService {
         this.clock = clock;
     }
 
-    public void setNeuLowestBins(Map<String, Double> values) {
-        neuLowestBins = values;
-    }
-
-    public void setNeuAverages(Map<String, NeuApi.Average> values) {
-        neuAverages = values;
-    }
-
     public void setBazaar(BazaarSnapshot snapshot) {
         bazaar = snapshot;
     }
@@ -65,19 +53,10 @@ public final class PriceService {
         return bazaar;
     }
 
-    public int neuLowestBinCount() {
-        return neuLowestBins.size();
-    }
-
-    public int neuAverageCount() {
-        return neuAverages.size();
-    }
-
     /**
      * Values one unit of {@code key}, ignoring the auction {@code excludeUuid} itself.
      *
-     * @param unitPrice price per unit of the auction being judged, used to tell whether a
-     *                  source's lowest BIN is that very auction
+     * @param unitPrice price per unit of the auction being judged
      * @param allowRemote whether Coflnet may be queried over the network
      */
     public Valuation valuate(ItemKey key, String excludeUuid, double unitPrice, boolean allowRemote) {
@@ -103,43 +82,24 @@ public final class PriceService {
             v.otherListings = index.count(key.key, excludeUuid);
         }
 
-        double neuVolume = Double.NaN;
-        if (config.sourceNeu && key.neuKey != null && key.neuExact) {
-            Double lbin = neuLowestBins.get(key.neuKey);
-            // NEU's lowest BIN may already be this very auction: only use it when it is higher.
-            if (lbin != null && lbin > unitPrice * 1.001) {
-                v.neuLbin = lbin;
-            }
-            NeuApi.Average average = neuAverages.get(key.neuKey);
-            if (average != null) {
-                v.neuAverage = average.price;
-                neuVolume = average.salesPerDay;
-            }
-        }
-
         int nowMinute = (int) (clock.getAsLong() / 60_000L);
         SalesHistory.Stats stats = sales.stats(key.key, nowMinute, config.ahMinSalesSamples);
         if (stats.samples >= config.ahMinSalesSamples) {
             v.salesMedian = stats.median;
             v.salesSamples = stats.samples;
         }
-        if (stats.volumeReliable) {
-            v.volumePerDay = stats.volumePerDay;
-            v.volumeSource = "Hypixel";
-        } else if (!Double.isNaN(neuVolume)) {
-            v.volumePerDay = neuVolume;
-            v.volumeSource = "NEU";
-        } else if (!Double.isNaN(stats.volumePerDay)) {
+        if (!Double.isNaN(stats.volumePerDay)) {
             v.volumePerDay = stats.volumePerDay;
             v.volumeSource = "Hypixel";
         }
 
         if (config.sourceCoflnet && key.coflTag != null) {
-            boolean missingData = Double.isNaN(v.salesReference()) || Double.isNaN(v.volumePerDay);
+            boolean missingData = Double.isNaN(v.salesReference()) || !stats.volumeReliable;
             CoflnetApi.Price price = allowRemote && missingData ? coflnet.get(key.coflTag) : coflnet.cached(key.coflTag);
             if (price != null) {
                 v.coflMedian = price.median;
-                if (Double.isNaN(v.volumePerDay) && !Double.isNaN(price.volume)) {
+                // Coflnet counts days of sales: better than a few hours of our own watching.
+                if (!stats.volumeReliable && !Double.isNaN(price.volume)) {
                     v.volumePerDay = price.volume;
                     v.volumeSource = "Coflnet";
                 }
@@ -168,8 +128,8 @@ public final class PriceService {
     }
 
     /**
-     * True when only Coflnet could give {@code key} a sales price right now: no bazaar price, no
-     * NEU average, too few sales of our own, and Coflnet not asked recently.
+     * True when only Coflnet could give {@code key} a sales price or a sales volume right now: no
+     * bazaar price, too few sales of our own or too short a watch, and Coflnet not asked recently.
      */
     public boolean needsRemoteSales(ItemKey key) {
         if (!config.sourceCoflnet || key.coflTag == null || coflnet.isKnown(key.coflTag)) {
@@ -182,11 +142,9 @@ public final class PriceService {
                 return false;
             }
         }
-        if (config.sourceNeu && key.neuKey != null && key.neuExact && neuAverages.containsKey(key.neuKey)) {
-            return false;
-        }
         int nowMinute = (int) (clock.getAsLong() / 60_000L);
-        return sales.stats(key.key, nowMinute, config.ahMinSalesSamples).samples < config.ahMinSalesSamples;
+        SalesHistory.Stats stats = sales.stats(key.key, nowMinute, config.ahMinSalesSamples);
+        return stats.samples < config.ahMinSalesSamples || !stats.volumeReliable;
     }
 
     /** Price of one unit of an upgrade part, NaN when unknown: bazaar instant-sell, else its AH value. */
@@ -303,7 +261,7 @@ public final class PriceService {
 
     /** True when a Coflnet lookup could add something the local data lacks. */
     public boolean wouldUseRemote(ItemKey key, Valuation v) {
-        return config.sourceCoflnet && key.coflTag != null && !v.bazaar
+        return config.sourceCoflnet && key.coflTag != null && !v.bazaar && !coflnet.isKnown(key.coflTag)
             && (Double.isNaN(v.salesReference()) || Double.isNaN(v.volumePerDay));
     }
 }

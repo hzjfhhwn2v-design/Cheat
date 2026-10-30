@@ -20,7 +20,12 @@ import java.util.regex.Pattern;
 /** Works out the {@link ItemKey} of an item from its NBT. */
 public final class ItemKeys {
     private static final Pattern PET_LEVEL = Pattern.compile("\\[Lvl (\\d+)]");
-    private static final String[] TIERS = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"};
+    /**
+     * Pets that level past 100. Coflnet reads "level 100" as "100 or more" for them, so their level
+     * 100 bucket gets no Coflnet price.
+     */
+    private static final Set<String> LEVEL_200_PETS = new HashSet<String>(Arrays.asList(
+        "GOLDEN_DRAGON", "JADE_DRAGON", "ROSE_DRAGON"));
     private static final String[] GEM_QUALITIES = {"ROUGH", "FLAWED", "FINE", "FLAWLESS", "PERFECT"};
     /**
      * Enchantments the enchanting table gives up to level 5: at those levels their books are worth
@@ -172,12 +177,14 @@ public final class ItemKeys {
         }
         b.add(Upgrades.Kind.POWER_SCROLL, NbtReader.string(extra.get("power_ability_scroll")), 1);
         b.add(Upgrades.Kind.DYE, NbtReader.string(extra.get("dye_item")), 1);
-        // Drill parts: "drill_part_engine": "titanium_drill_engine", or newer "engine": {"id": "..."}.
-        for (String part : new String[] {"drill_part_upgrade_module", "drill_part_fuel_tank", "drill_part_engine"}) {
-            b.add(Upgrades.Kind.DRILL_PART, NbtReader.string(extra.get(part)), 1);
-        }
-        for (String part : new String[] {"upgrade_module", "fuel_tank", "engine"}) {
-            b.add(Upgrades.Kind.DRILL_PART, NbtReader.string(NbtReader.compound(extra.get(part)).get("id")), 1);
+        // Drill parts: newer "engine": {"id": "..."} or older "drill_part_engine": "titanium_drill_engine". Most
+        // drills carry both for the same part, so each slot is counted once.
+        for (String slot : new String[] {"upgrade_module", "fuel_tank", "engine"}) {
+            String part = NbtReader.string(NbtReader.compound(extra.get(slot)).get("id"));
+            if (part == null || part.isEmpty()) {
+                part = NbtReader.string(extra.get("drill_part_" + slot));
+            }
+            b.add(Upgrades.Kind.DRILL_PART, part, 1);
         }
         // Fishing rod parts: "line": {"part": "speedy_line", ...}.
         for (String part : new String[] {"line", "sinker", "hook"}) {
@@ -228,18 +235,17 @@ public final class ItemKeys {
             String rest = id.substring("ENCHANTMENT_".length());
             int underscore = rest.lastIndexOf('_');
             if (underscore > 0) {
-                return new ItemKey("ENCHANTED_BOOK", id, rest.substring(0, underscore) + ";" + rest.substring(underscore + 1),
-                    true, id, id);
+                return new ItemKey("ENCHANTED_BOOK", id, id, id);
             }
         }
-        return new ItemKey(id, id, id, true, id, id);
+        return new ItemKey(id, id, id, id);
     }
 
     private static ItemKey pet(Map<String, Object> extra, String itemName) {
         Map<String, Object> info = JsonTree.obj(JsonTree.parseQuiet(NbtReader.string(extra.get("petInfo"))));
         String type = upper(JsonTree.str(info.get("type")));
         if (type == null) {
-            return new ItemKey("PET", "PET_UNKNOWN", null, false, null, null);
+            return new ItemKey("PET", "PET_UNKNOWN", null, null);
         }
         String tier = upper(JsonTree.str(info.get("tier")));
         StringBuilder key = new StringBuilder("PET_").append(type);
@@ -247,14 +253,20 @@ public final class ItemKeys {
             key.append(';').append(tier);
         }
         // Level matters a lot for value, but exact levels would leave too few comparables.
-        key.append(';').append(levelBucket(petLevel(itemName)));
+        int level = petLevel(itemName);
+        String bucket = levelBucket(level);
+        key.append(';').append(bucket);
         String skin = upper(JsonTree.str(info.get("skin")));
         if (skin != null) {
             key.append(";SKIN_").append(skin);
         }
-        int tierIndex = indexOf(TIERS, tier);
-        String neu = tierIndex >= 0 ? type + ";" + tierIndex : null;
-        return new ItemKey("PET", key.toString(), neu, false, null, null);
+        // The same rarity, levels and skin on Coflnet: "PET_ENDER_DRAGON?Rarity=LEGENDARY&PetLevel=90-99&PetSkin=None".
+        String cofl = null;
+        if (tier != null && level > 0 && !(level == 100 && LEVEL_200_PETS.contains(type))) {
+            cofl = "PET_" + type + "?Rarity=" + tier + "&PetLevel=" + bucket.substring(1) + "&PetSkin="
+                + (skin == null ? "None" : skin);
+        }
+        return new ItemKey("PET", key.toString(), cofl, null);
     }
 
     private static ItemKey book(Map<String, Object> extra) {
@@ -264,29 +276,31 @@ public final class ItemKeys {
             String name = entry.getKey().toUpperCase(Locale.ROOT);
             int level = NbtReader.intValue(entry.getValue(), 0);
             String key = "ENCHANTMENT_" + name + "_" + level;
-            return new ItemKey("ENCHANTED_BOOK", key, name + ";" + level, true, key, key);
+            return new ItemKey("ENCHANTED_BOOK", key, key, key);
         }
         if (enchantments.isEmpty()) {
-            return new ItemKey("ENCHANTED_BOOK", "ENCHANTED_BOOK", null, false, null, null);
+            return new ItemKey("ENCHANTED_BOOK", "ENCHANTED_BOOK", null, null);
         }
         List<String> parts = new ArrayList<String>();
         for (Map.Entry<String, Object> entry : enchantments.entrySet()) {
             parts.add(entry.getKey().toUpperCase(Locale.ROOT) + "_" + NbtReader.intValue(entry.getValue(), 0));
         }
         Collections.sort(parts);
-        return new ItemKey("ENCHANTED_BOOK", "ENCHANTED_BOOK[" + join(parts) + "]", null, false, null, null);
+        return new ItemKey("ENCHANTED_BOOK", "ENCHANTED_BOOK[" + join(parts) + "]", null, null);
     }
 
     private static ItemKey rune(String id, Map<String, Object> extra) {
         Map<String, Object> runes = NbtReader.compound(extra.get("runes"));
         if (runes.size() != 1) {
-            return new ItemKey(id, id + "_UNKNOWN", null, false, null, null);
+            return new ItemKey(id, id + "_UNKNOWN", null, null);
         }
         Map.Entry<String, Object> entry = runes.entrySet().iterator().next();
         String type = entry.getKey().toUpperCase(Locale.ROOT);
         int level = NbtReader.intValue(entry.getValue(), 0);
-        String neu = "RUNE".equals(id) ? type + "_RUNE;" + level : null;
-        return new ItemKey(id, id + "_" + type + "_" + level, neu, neu != null, null, null);
+        // Coflnet: "RUNE_MUSIC?MusicRune=3".
+        String cofl = "RUNE".equals(id) && level > 0
+            ? "RUNE_" + type + "?" + Text.titleCase(type).replace(" ", "") + "Rune=" + level : null;
+        return new ItemKey(id, id + "_" + type + "_" + level, cofl, null);
     }
 
     private static ItemKey potion(Map<String, Object> extra) {
@@ -302,7 +316,7 @@ public final class ItemKeys {
         if (NbtReader.truthy(extra.get("splash"))) {
             key.append("_SPLASH");
         }
-        return new ItemKey("POTION", key.toString(), null, false, null, null);
+        return new ItemKey("POTION", key.toString(), null, null);
     }
 
     private static ItemKey attributeShard(Map<String, Object> extra) {
@@ -311,9 +325,9 @@ public final class ItemKeys {
             Map.Entry<String, Object> entry = attributes.entrySet().iterator().next();
             String key = "ATTRIBUTE_SHARD_" + entry.getKey().toUpperCase(Locale.ROOT) + "_"
                 + NbtReader.intValue(entry.getValue(), 0);
-            return new ItemKey("ATTRIBUTE_SHARD", key, null, false, null, null);
+            return new ItemKey("ATTRIBUTE_SHARD", key, null, null);
         }
-        return new ItemKey("ATTRIBUTE_SHARD", "ATTRIBUTE_SHARD" + attributeSuffix(attributes), null, false, null, null);
+        return new ItemKey("ATTRIBUTE_SHARD", "ATTRIBUTE_SHARD" + attributeSuffix(attributes), null, null);
     }
 
     private static ItemKey plain(String id, Map<String, Object> extra) {
@@ -345,8 +359,7 @@ public final class ItemKeys {
                 exact = false;
             }
         }
-        // NEU's lowest BIN for the bare id is still a valid lower bound, so neuKey stays set.
-        return new ItemKey(id, key.toString(), id, exact, exact ? id : null, exact ? id : null);
+        return new ItemKey(id, key.toString(), exact ? id : null, exact ? id : null);
     }
 
     static int petLevel(String itemName) {

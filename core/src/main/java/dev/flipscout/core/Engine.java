@@ -8,7 +8,6 @@ import dev.flipscout.core.api.EndedAuction;
 import dev.flipscout.core.api.EndedPage;
 import dev.flipscout.core.api.HypixelApi;
 import dev.flipscout.core.api.ItemCatalog;
-import dev.flipscout.core.api.NeuApi;
 import dev.flipscout.core.flip.AuctionFlip;
 import dev.flipscout.core.flip.AuctionFlipFinder;
 import dev.flipscout.core.flip.BazaarFlip;
@@ -21,6 +20,7 @@ import dev.flipscout.core.market.BazaarHistory;
 import dev.flipscout.core.market.CoflnetSource;
 import dev.flipscout.core.market.PriceService;
 import dev.flipscout.core.market.SalesHistory;
+import dev.flipscout.core.util.Text;
 
 import java.io.File;
 import java.io.IOException;
@@ -72,8 +72,11 @@ public final class Engine {
     private static final int MAX_PENDING_CONFIRMATIONS = 4;
     /** Coflnet sales prices are looked up ahead of time at most this often... */
     private static final long PREFETCH_EVERY_MS = 10_000L;
-    /** ...starting a while after the first scan, once NEU and our own sales had their chance. */
+    /** ...starting a while after the first scan, once our own sales had their chance. */
     private static final long PREFETCH_DELAY_MS = 2 * MINUTE;
+
+    /** Who bought a notified auction. */
+    public enum Buyer { YOU, COOP, SOMEONE_ELSE }
 
     /** A notification kept for /flipscout recent and /flipscout open. */
     public static final class Notification {
@@ -85,16 +88,31 @@ public final class Engine {
         public final String auctionUuid;
         public final long listedAt;
         public final long notifiedAt;
+        /** For auction flips: item name without colours, price, expected resale and profit. */
+        public final String itemName;
+        public final long price;
+        public final double resale;
+        public final double profit;
+        private volatile Buyer buyer;
+        private volatile String buyerName;
         private volatile long soldAt;
-        private volatile boolean boughtByYou;
 
-        Notification(long time, Msg message, String command, String auctionUuid, long listedAt, long notifiedAt) {
+        Notification(long time, Msg message, String command) {
+            this(time, message, command, null, 0, 0, null, 0, 0, 0);
+        }
+
+        Notification(long time, Msg message, String command, String auctionUuid, long listedAt, long notifiedAt,
+                     String itemName, long price, double resale, double profit) {
             this.time = time;
             this.message = message;
             this.command = command;
             this.auctionUuid = auctionUuid;
             this.listedAt = listedAt;
             this.notifiedAt = notifiedAt;
+            this.itemName = itemName;
+            this.price = price;
+            this.resale = resale;
+            this.profit = profit;
         }
 
         /** When the auction sold (Hypixel's clock), 0 while we have not seen it sell. */
@@ -102,12 +120,19 @@ public final class Engine {
             return soldAt;
         }
 
-        public boolean boughtByYou() {
-            return boughtByYou;
+        /** Who bought it, null while unsold. */
+        public Buyer buyer() {
+            return buyer;
         }
 
-        void sold(long at, boolean byYou) {
-            boughtByYou = byYou;
+        /** Name of the co-op member who bought it, when known. */
+        public String buyerName() {
+            return buyerName;
+        }
+
+        void sold(long at, Buyer by, String name) {
+            buyer = by;
+            buyerName = name;
             soldAt = at;
         }
     }
@@ -153,8 +178,9 @@ public final class Engine {
     private final Platform platform;
     private final LongSupplier clock;
     private final File salesFile;
+    private final HttpFetcher http;
     private final HypixelApi hypixel;
-    private final NeuApi neu;
+    private final CoflnetApi coflnetApi;
 
     final AuctionIndex index = new AuctionIndex();
     final SalesHistory sales = new SalesHistory();
@@ -164,7 +190,9 @@ public final class Engine {
     final AuctionFlipFinder auctionFinder;
     final BazaarFlipFinder bazaarFinder;
     final Status status = new Status();
+    final Coop coop;
     private final Notifier notifier = new Notifier();
+    private final BlockedFlips blocked = new BlockedFlips();
 
     private final Map<String, ItemKey> canonicalKeys = new ConcurrentHashMap<String, ItemKey>();
     /** Guarded by itself: read by commands on other threads. */
@@ -204,10 +232,10 @@ public final class Engine {
     private final AtomicBoolean bazaarJob = new AtomicBoolean();
     private final AtomicBoolean saveJob = new AtomicBoolean();
     private final AtomicBoolean prefetchJob = new AtomicBoolean();
+    private final AtomicBoolean coopJob = new AtomicBoolean();
     private final AtomicInteger pendingConfirmations = new AtomicInteger();
     private volatile long nextItems;
-    private volatile long nextNeuLowestBins;
-    private volatile long nextNeuAverages;
+    private volatile long nextNames;
     private volatile long nextEndedPoll;
     private volatile long nextBazaarPoll;
     private long lastEndedUpdate;
@@ -216,17 +244,19 @@ public final class Engine {
     private final Map<String, Long> cooldowns = new HashMap<String, Long>();
     private final Backoff endedBackoff = new Backoff();
     private final Backoff bazaarBackoff = new Backoff();
-    private final Backoff neuBackoff = new Backoff();
     private final Backoff itemsBackoff = new Backoff();
+    private final Backoff namesBackoff = new Backoff();
 
     public Engine(final Config config, Platform platform, HttpFetcher http, File dataDir, LongSupplier clock) {
         this.config = config;
         this.platform = platform;
         this.clock = clock;
         this.salesFile = new File(dataDir, "sales.bin");
+        this.http = http;
         this.hypixel = new HypixelApi(http, () -> config.urlHypixel);
-        this.neu = new NeuApi(http, () -> config.urlNeu);
-        this.coflnet = new CoflnetSource(new CoflnetApi(http, () -> config.urlCoflnet), clock);
+        this.coflnetApi = new CoflnetApi(http, () -> config.urlCoflnet);
+        this.coflnet = new CoflnetSource(coflnetApi, clock);
+        this.coop = new Coop(platform, clock);
         this.prices = new PriceService(config, index, sales, coflnet, clock);
         this.auctionFinder = new AuctionFlipFinder(config, prices);
         this.bazaarFinder = new BazaarFlipFinder(config);
@@ -343,8 +373,11 @@ public final class Engine {
             return;
         }
         long now = clock.getAsLong();
-        if (now >= nextItems || (config.sourceNeu && (now >= nextNeuLowestBins || now >= nextNeuAverages))) {
+        if (now >= nextItems || (config.sourceCoflnet && now >= nextNames)) {
             background(referenceJob, this::refreshReferenceData);
+        }
+        if (coop.namesMissing()) {
+            background(coopJob, () -> coop.lookUpNames(http));
         }
         if (config.ahEnabled) {
             now = clock.getAsLong();
@@ -521,6 +554,8 @@ public final class Engine {
             status.ok("aste");
             auctionBackoff.reset();
             nextAuctionPoll = expectedNextUpdate(first.lastUpdated + publishDelay, first.serverDate, clock.getAsLong());
+            // The minute's flips are out: say what the blacklist kept back.
+            summarizeBlocked();
         } catch (IOException e) {
             status.error("aste", e);
             nextAuctionPoll = clock.getAsLong() + auctionBackoff.fail();
@@ -556,6 +591,9 @@ public final class Engine {
 
     private int merge(AuctionPage page, long scan, long now) {
         for (Auction auction : page.auctions) {
+            if (auction.coop != null && auction.coop.length > 1) {
+                coop.learn(auction.profileId, auction.coop);
+            }
             if (!auction.bin || index.touch(auction.uuid, scan) || auction.decoded == null) {
                 continue;
             }
@@ -575,16 +613,27 @@ public final class Engine {
         if (!evaluated.add(listing.uuid)) {
             return;
         }
-        String me = platform.playerUuid();
-        if (me != null && me.equals(listing.seller)) {
+        // Your own auctions and your co-op's: buying them back would only cost the taxes.
+        if (coop.isUs(listing.seller)) {
+            return;
+        }
+        String blockedBy = config.blacklistMatch(listing.key.id, listing.key.key);
+        if (blockedBy != null) {
+            if (config.blockedSummary) {
+                AuctionFlip hidden = auctionFinder.evaluateBlacklisted(listing);
+                if (hidden != null) {
+                    blocked.add(notifier.blockedLine(hidden, blockedBy), hidden.profit);
+                }
+            }
             return;
         }
         AuctionFlip flip = auctionFinder.evaluate(listing, false);
-        // A flip backed by two prices goes out at once. One resting on a single price, or not a
-        // flip on local data alone, is first checked against Coflnet when that could add the
-        // missing sales data: in the background, so the round trip never delays anything else.
-        if ((flip == null || flip.weak) && pendingConfirmations.get() < MAX_PENDING_CONFIRMATIONS
-            && auctionFinder.worthConfirming(listing)) {
+        // A flip backed by two prices and a known sales volume goes out at once. One resting on a
+        // single price, without a volume, or not a flip on local data alone, is first checked
+        // against Coflnet when that could add the missing data: in the background, so the round
+        // trip never delays anything else.
+        boolean unsure = flip == null || flip.weak || Double.isNaN(flip.valuation.volumePerDay);
+        if (unsure && pendingConfirmations.get() < MAX_PENDING_CONFIRMATIONS && auctionFinder.worthConfirming(listing)) {
             confirm(listing);
         } else if (flip != null) {
             notifyAuction(flip);
@@ -610,7 +659,7 @@ public final class Engine {
 
     private void notifyAuction(AuctionFlip flip) {
         status.auctionNotifications.incrementAndGet();
-        deliver(notifier.auction(flip, serverTime()), true, clock.getAsLong(), flip.listing);
+        deliver(notifier.auction(flip, serverTime()), clock.getAsLong(), flip);
     }
 
     /**
@@ -761,8 +810,11 @@ public final class Engine {
                 }
                 EndedAuction sale = byId.get(normalizeUuid(notification.auctionUuid));
                 if (sale != null) {
-                    notification.sold(sale.timestamp > 0 ? sale.timestamp : serverTime(),
-                        me != null && me.equals(normalizeUuid(sale.buyer)));
+                    String buyer = normalizeUuid(sale.buyer);
+                    Buyer who = me != null && me.equals(buyer) ? Buyer.YOU
+                        : coop.isMember(buyer) || coop.isOurProfile(sale.buyerProfile) ? Buyer.COOP : Buyer.SOMEONE_ELSE;
+                    notification.sold(sale.timestamp > 0 ? sale.timestamp : serverTime(), who,
+                        who == Buyer.COOP ? coop.nameOf(buyer) : null);
                 }
             }
         }
@@ -784,9 +836,18 @@ public final class Engine {
             lastBazaarUpdate = snapshot.lastUpdated;
             prices.setBazaar(snapshot);
             // Compare with the history before adding the new sample to it.
-            List<BazaarFlip> flips = bazaarFinder.find(snapshot, bazaarHistory, items, now);
+            List<BazaarFlip> hidden = config.blockedSummary && !config.blacklist.isEmpty()
+                ? new ArrayList<BazaarFlip>() : null;
+            List<BazaarFlip> flips = bazaarFinder.find(snapshot, bazaarHistory, items, now, hidden);
             bazaarHistory.record(snapshot, now);
             notifyBazaar(flips, now);
+            if (hidden != null) {
+                noteBlocked(hidden, now);
+            }
+            if (!config.ahEnabled) {
+                // No auction round to close: the bazaar's own update closes it.
+                summarizeBlocked();
+            }
         } catch (IOException e) {
             status.error("bazaar", e);
             nextBazaarPoll = clock.getAsLong() + bazaarBackoff.fail();
@@ -812,7 +873,7 @@ public final class Engine {
             }
             shown++;
             status.bazaarNotifications.incrementAndGet();
-            deliver(notifier.bazaar(flip), false, now, null);
+            deliver(notifier.bazaar(flip), now, null);
         }
         if (cooldowns.size() > 10_000) {
             Iterator<Map.Entry<String, Long>> it = cooldowns.entrySet().iterator();
@@ -822,6 +883,32 @@ public final class Engine {
                 }
             }
         }
+    }
+
+    /** Bazaar flips the blacklist hid, each once per cooldown like real notifications. */
+    private void noteBlocked(List<BazaarFlip> hidden, long now) {
+        for (BazaarFlip flip : hidden) {
+            String key = "blocked:" + flip.cooldownKey();
+            Long until = cooldowns.get(key);
+            if (until != null && until > now) {
+                continue;
+            }
+            cooldowns.put(key, now + cooldownMinutes(flip.type) * MINUTE);
+            String entry = config.blacklistMatch(flip.productId);
+            blocked.add(notifier.blockedLine(flip, entry != null ? entry : flip.productId), flip.profit);
+        }
+    }
+
+    /** "Your filters blocked N flips", when they did. */
+    private void summarizeBlocked() {
+        List<BlockedFlips.Entry> hidden = blocked.drain();
+        if (hidden.isEmpty() || !config.blockedSummary) {
+            return;
+        }
+        if (config.onlyInSkyblock && !platform.isInSkyblock()) {
+            return;
+        }
+        platform.showMessage(notifier.blocked(hidden));
     }
 
     private int cooldownMinutes(BazaarFlip.Type type) {
@@ -841,13 +928,8 @@ public final class Engine {
         if (clock.getAsLong() >= nextItems) {
             refreshItems(clock.getAsLong());
         }
-        if (config.sourceNeu) {
-            if (clock.getAsLong() >= nextNeuLowestBins) {
-                refreshNeuLowestBins(clock.getAsLong());
-            }
-            if (clock.getAsLong() >= nextNeuAverages) {
-                refreshNeuAverages(clock.getAsLong());
-            }
+        if (config.sourceCoflnet && clock.getAsLong() >= nextNames) {
+            refreshNames(clock.getAsLong());
         }
     }
 
@@ -855,6 +937,7 @@ public final class Engine {
         try {
             ItemCatalog catalog = hypixel.fetchItems();
             if (catalog.size() > 0) {
+                catalog = catalog.withNames(items.names());
                 items = catalog;
                 prices.setCatalog(catalog);
             }
@@ -871,38 +954,20 @@ public final class Engine {
         }
     }
 
-    private void refreshNeuLowestBins(long now) {
+    /** Coflnet's item names: Hypixel's item list lacks shards, enchantments and other bazaar products. */
+    private void refreshNames(long now) {
         try {
-            prices.setNeuLowestBins(neu.fetchLowestBins());
-            status.lastNeu = now;
-            status.ok("NEU");
-            neuBackoff.reset();
-            nextNeuLowestBins = now + 5 * MINUTE;
-        } catch (IOException e) {
-            failNeu(e);
-        } catch (RuntimeException e) {
-            failNeu(e);
+            Map<String, String> names = coflnetApi.fetchItemNames();
+            if (!names.isEmpty()) {
+                items = items.withNames(names);
+            }
+            status.ok("nomi");
+            namesBackoff.reset();
+            nextNames = now + 24 * HOUR;
+        } catch (IOException | RuntimeException e) {
+            status.error("nomi", e);
+            nextNames = clock.getAsLong() + Math.max(10 * MINUTE, namesBackoff.fail());
         }
-    }
-
-    private void refreshNeuAverages(long now) {
-        try {
-            prices.setNeuAverages(neu.fetchAverages());
-            status.ok("NEU");
-            nextNeuAverages = now + HOUR;
-        } catch (IOException e) {
-            failNeu(e);
-        } catch (RuntimeException e) {
-            failNeu(e);
-        }
-    }
-
-    private void failNeu(Exception e) {
-        status.error("NEU", e);
-        long retry = clock.getAsLong() + Math.max(5 * MINUTE, neuBackoff.fail());
-        // Do not hammer a site that is down: both NEU files wait.
-        nextNeuLowestBins = Math.max(nextNeuLowestBins, retry);
-        nextNeuAverages = Math.max(nextNeuAverages, retry);
     }
 
     private void saveSales() {
@@ -916,10 +981,13 @@ public final class Engine {
 
     // ---- Notifications (any thread) ----
 
-    private void deliver(Msg message, boolean auction, long now, AuctionIndex.Listing listing) {
+    private void deliver(Msg message, long now, AuctionFlip flip) {
+        boolean auction = flip != null;
+        AuctionIndex.Listing listing = auction ? flip.listing : null;
         Notification notification = listing == null
-            ? new Notification(now, message, message.firstCommand(), null, 0, 0)
-            : new Notification(now, message, message.firstCommand(), listing.uuid, listing.start, serverTime());
+            ? new Notification(now, message, message.firstCommand())
+            : new Notification(now, message, message.firstCommand(), listing.uuid, listing.start, serverTime(),
+                Text.stripCodes(listing.itemName), listing.price, flip.resale, flip.profit);
         synchronized (recent) {
             recent.addFirst(notification);
             while (recent.size() > MAX_RECENT) {
@@ -939,7 +1007,6 @@ public final class Engine {
     // ---- Queries for commands (any thread) ----
 
     public List<AuctionFlip> topAuctions(int limit) {
-        String me = platform.playerUuid();
         // The cheapest listing of each item, plus upgraded ones, which can be flips without being the cheapest.
         Map<String, AuctionIndex.Listing> candidates = new LinkedHashMap<String, AuctionIndex.Listing>();
         for (AuctionIndex.Listing listing : index.cheapestPerKey()) {
@@ -952,7 +1019,7 @@ public final class Engine {
         }
         List<AuctionFlip> flips = new ArrayList<AuctionFlip>();
         for (AuctionIndex.Listing listing : candidates.values()) {
-            if (me != null && me.equals(listing.seller)) {
+            if (coop.isUs(listing.seller)) {
                 continue;
             }
             AuctionFlip flip = auctionFinder.evaluate(listing, false);
@@ -982,6 +1049,37 @@ public final class Engine {
         synchronized (recent) {
             return new ArrayList<Notification>(recent);
         }
+    }
+
+    /**
+     * The auction notification for an item you just bought for {@code price} coins, or null: so
+     * the purchase report can say what the flip was expected to earn.
+     */
+    public Notification notifiedPurchase(String itemName, double price) {
+        String wanted = comparable(itemName);
+        synchronized (recent) {
+            for (Notification notification : recent) {
+                if (notification.auctionUuid != null && Math.abs(notification.price - price) < 1
+                    && (wanted.isEmpty() || comparable(notification.itemName).contains(wanted)
+                        || wanted.contains(comparable(notification.itemName)))) {
+                    return notification;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Letters and digits only, lowercase: stars and symbols differ between chat and the API. */
+    private static String comparable(String name) {
+        String plain = Text.stripCodes(name == null ? "" : name).toLowerCase(Locale.ROOT);
+        StringBuilder sb = new StringBuilder(plain.length());
+        for (int i = 0; i < plain.length(); i++) {
+            char c = plain.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     public Notification lastNotification() {

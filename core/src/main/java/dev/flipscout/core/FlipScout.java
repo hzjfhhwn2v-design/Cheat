@@ -11,13 +11,14 @@ import java.util.function.LongSupplier;
 
 /** Entry point used by the Forge and Fabric mods. */
 public final class FlipScout {
-    public static final String VERSION = "1.1.0";
+    public static final String VERSION = "1.2.0";
     public static final String MOD_ID = "flipscout";
 
     private final Config config = new Config();
     private final Platform platform;
     private final Engine engine;
     private final ProfitTracker tracker;
+    private final Discord discord;
     private final Commands commands;
     private final ConfigEditor editor;
     private boolean shutdownHookAdded;
@@ -37,7 +38,9 @@ public final class FlipScout {
         engine = new Engine(config, platform, http, dataDir, clock);
         tracker = new ProfitTracker(config, new File(dataDir, "guadagni.json"), clock, platform, engine::runAsync);
         tracker.load();
-        commands = new Commands(config, configFile, engine, tracker, platform, clock);
+        discord = new Discord(config, http, platform, clock, engine::items, engine::notifiedPurchase);
+        tracker.setListener(discord::onTrade);
+        commands = new Commands(config, configFile, engine, tracker, discord, platform, clock);
         editor = new ConfigEditor(config, configFile);
     }
 
@@ -57,6 +60,7 @@ public final class FlipScout {
     public void stop() {
         engine.stop();
         tracker.stop();
+        discord.stop();
     }
 
     /** A chat message received from the server (not the mod's own), as plain text. */

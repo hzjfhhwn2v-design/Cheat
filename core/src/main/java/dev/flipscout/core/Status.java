@@ -19,7 +19,6 @@ public final class Status {
     public volatile long publishDelay;
     public volatile long lastEndedPoll;
     public volatile long lastBazaarPoll;
-    public volatile long lastNeu;
     public volatile long lastItems;
     public final AtomicInteger auctionNotifications = new AtomicInteger();
     public final AtomicInteger bazaarNotifications = new AtomicInteger();

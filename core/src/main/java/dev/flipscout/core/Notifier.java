@@ -7,8 +7,16 @@ import dev.flipscout.core.market.Valuation;
 import dev.flipscout.core.util.Coins;
 import dev.flipscout.core.util.Text;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
 /** Builds the chat messages (in Italian) for flips. */
 final class Notifier {
+    /** Lines of the blocked-flips hover: more would not fit on screen. */
+    private static final int MAX_BLOCKED_LINES = 15;
+
     Msg auction(AuctionFlip flip, long now) {
         AuctionIndex.Listing l = flip.listing;
         String name = itemName(l);
@@ -52,15 +60,9 @@ final class Notifier {
                 h.append("§7  BIN più basso (altri): §f").append(Coins.compact(v.lbinOther))
                     .append(" §8(").append(v.otherListings).append(" in vendita)\n");
             }
-            if (!Double.isNaN(v.neuLbin)) {
-                h.append("§7  BIN più basso NEU: §f").append(Coins.compact(v.neuLbin)).append('\n');
-            }
             if (!Double.isNaN(v.salesMedian)) {
                 h.append("§7  Mediana vendite recenti: §f").append(Coins.compact(v.salesMedian))
                     .append(" §8(").append(v.salesSamples).append(" vendite)\n");
-            }
-            if (!Double.isNaN(v.neuAverage)) {
-                h.append("§7  Media NEU 3 giorni: §f").append(Coins.compact(v.neuAverage)).append('\n');
             }
             if (!Double.isNaN(v.coflMedian)) {
                 h.append("§7  Mediana Coflnet: §f").append(Coins.compact(v.coflMedian)).append('\n');
@@ -161,6 +163,57 @@ final class Notifier {
         }
         line.append(" §b§l[BAZAAR]");
         return new Msg().run(line.toString(), flip.command(), hover);
+    }
+
+    /**
+     * "Your filters blocked N flips": one line per flip in the hover, most profitable first. A click
+     * shows the blacklist.
+     */
+    Msg blocked(List<BlockedFlips.Entry> entries) {
+        List<BlockedFlips.Entry> sorted = new ArrayList<BlockedFlips.Entry>(entries);
+        Collections.sort(sorted, new Comparator<BlockedFlips.Entry>() {
+            @Override
+            public int compare(BlockedFlips.Entry a, BlockedFlips.Entry b) {
+                return Double.compare(b.profit, a.profit);
+            }
+        });
+        StringBuilder h = new StringBuilder("§6Flip nascosti dalla blacklist\n");
+        for (int i = 0; i < sorted.size(); i++) {
+            if (i == MAX_BLOCKED_LINES) {
+                h.append("§8... e altri ").append(sorted.size() - i).append('\n');
+                break;
+            }
+            h.append("§7• ").append(sorted.get(i).line).append('\n');
+        }
+        h.append("§eClicca per vedere la blacklist");
+        int n = sorted.size();
+        return new Msg().run(Msg.PREFIX + "§7I tuoi filtri hanno bloccato §e" + n + " §7flip §8(passa il mouse per vederli)",
+            "/flipscout blacklist list", h.toString());
+    }
+
+    /** One hover line for an auction flip the blacklist hid. */
+    String blockedLine(AuctionFlip flip, String entry) {
+        AuctionIndex.Listing l = flip.listing;
+        return itemName(l) + " §8» §6" + Coins.compact(l.price) + " §8→ §a" + Coins.compact(flip.resale)
+            + " §2+" + Coins.compact(flip.profit) + " §8(" + entry + ")";
+    }
+
+    /** One hover line for a bazaar flip the blacklist hid. */
+    String blockedLine(BazaarFlip flip, String entry) {
+        String what;
+        switch (flip.type) {
+            case ORDER:
+                what = "§dBZ flip §f" + flip.name + " §2+" + Coins.decimal(flip.marginPercent, 1) + "% §8~"
+                    + Coins.compact(flip.profit) + "/h";
+                break;
+            case CRASH:
+                what = "§dBZ crollo §f" + flip.name + " §2~+" + Coins.compact(flip.profit);
+                break;
+            default:
+                what = "§dBZ→NPC §f" + flip.name + " §2+" + Coins.compact(flip.profit);
+                break;
+        }
+        return what + " §8(" + entry + ")";
     }
 
     String itemName(AuctionIndex.Listing l) {
