@@ -79,7 +79,7 @@ class DiscordTest {
         assertEquals(WEBHOOK, posts.get(0)[0]);
 
         Map<String, Object> bought = embed(posts.get(0)[1]);
-        assertEquals("🛒 Hai comprato Hyperion", bought.get("title"));
+        assertEquals("🛒 Hai comprato Hyperion per 800M", bought.get("title"));
         assertEquals("baldih", JsonTree.obj(bought.get("author")).get("name"));
         assertEquals("https://mc-heads.net/avatar/0123abcd/64", JsonTree.obj(bought.get("author")).get("icon_url"));
         assertEquals("https://sky.coflnet.com/static/icon/HYPERION", JsonTree.obj(bought.get("thumbnail")).get("url"));
@@ -89,7 +89,7 @@ class DiscordTest {
         assertTrue(boughtFields.contains("Profitto previsto=+77.5M (9.7%)"), boughtFields);
 
         Map<String, Object> sold = embed(posts.get(1)[1]);
-        assertEquals("💰 Hai venduto Hyperion", sold.get("title"));
+        assertEquals("💰 Hai venduto Hyperion per 900M (+68.5M)", sold.get("title"));
         // Underscores in names would turn into italics on Discord.
         assertEquals("Comprato da **Bob\\_1**", sold.get("description"));
         assertEquals(0x2ECC71, ((Number) sold.get("color")).intValue());
@@ -121,7 +121,7 @@ class DiscordTest {
         tracker.onChat("[Bazaar] Sold 64x Enchanted Diamond for 11,000 coins!");
         List<String[]> posts = sent();
         assertEquals(1, posts.size());
-        assertTrue(posts.get(0)[1].contains("Bazaar: hai venduto 64x Enchanted Diamond"));
+        assertTrue(posts.get(0)[1].contains("Bazaar: hai venduto 64x Enchanted Diamond per 11k"), posts.get(0)[1]);
     }
 
     @Test

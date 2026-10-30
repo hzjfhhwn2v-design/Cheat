@@ -209,7 +209,7 @@ final class Discord {
         String what = e.amount > 1 ? e.amount + "x " + e.item : e.item;
         switch (e.kind) {
             case AUCTION_BOUGHT:
-                embed.title = "🛒 Hai comprato " + what;
+                embed.title = "🛒 Hai comprato " + what + " per " + Coins.compact(e.coins);
                 embed.color = BLUE;
                 embed.field("Prezzo", coins(e.coins));
                 if (flip != null) {
@@ -218,7 +218,8 @@ final class Discord {
                 }
                 break;
             case AUCTION_SOLD:
-                embed.title = "💰 Hai venduto " + what;
+                embed.title = "💰 Hai venduto " + what + " per " + Coins.compact(e.coins)
+                    + (e.flip != null ? " (" + signed(e.flip.profit) + ")" : "");
                 if (e.player != null && !e.player.isEmpty()) {
                     embed.description = "Comprato da **" + escape(e.player) + "**" + (e.whileAway ? " mentre non c'eri" : "");
                 }
@@ -228,13 +229,14 @@ final class Discord {
                 flipFields(embed, e.flip);
                 break;
             case BAZAAR_BOUGHT:
-                embed.title = "🛒 Bazaar: hai comprato " + e.amount + "x " + e.item;
+                embed.title = "🛒 Bazaar: hai comprato " + e.amount + "x " + e.item + " per " + Coins.compact(e.coins);
                 embed.color = PURPLE;
                 embed.field("Spesa", coins(e.coins));
                 embed.field("Prezzo unitario", Coins.unit(e.coins / e.amount));
                 break;
             default:
-                embed.title = "💰 Bazaar: hai venduto " + e.amount + "x " + e.item;
+                embed.title = "💰 Bazaar: hai venduto " + e.amount + "x " + e.item + " per " + Coins.compact(e.net)
+                    + (e.flip != null ? " (" + signed(e.flip.profit) + ")" : "");
                 embed.color = e.flip == null ? GOLD : e.flip.profit >= 0 ? GREEN : RED;
                 embed.field("Incasso dopo le tasse", coins(e.net));
                 embed.field("Prezzo unitario", Coins.unit(e.net / e.amount));

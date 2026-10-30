@@ -246,7 +246,8 @@ perdita, giallo vendita di qualcosa che il mod non ti ha visto comprare.
 3. `/flipscout discord test` manda un messaggio di prova.
 
 L'indirizzo del webhook permette a chiunque lo abbia di scrivere nel canale: il mod non lo mostra mai in chat e non va
-condiviso. Se più persone usano lo stesso webhook, ogni messaggio porta nome e testa di chi ha fatto lo scambio.
+condiviso. Se più persone usano lo stesso webhook, ogni messaggio porta nome e testa di chi ha fatto lo scambio. Gli
+scambi sono quelli che riconosce il conto dei guadagni, quindi con `tracker.enabled off` si fermano anche i resoconti.
 
 ## Coop
 

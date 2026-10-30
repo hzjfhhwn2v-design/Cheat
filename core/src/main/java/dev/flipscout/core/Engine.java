@@ -69,7 +69,13 @@ public final class Engine {
     private static final long TICK_MS = 250L;
     /** A full scan whose pages have not all arrived by then is closed as incomplete. */
     private static final long SCAN_TIMEOUT_MS = 3 * MINUTE;
-    private static final int MAX_PENDING_CONFIRMATIONS = 4;
+    /**
+     * Coflnet confirmations at the same time: up to six for flips missing a second price or their
+     * volume, but only three for auctions that are not flips on local data, so that those never
+     * take the place of real flips (Coflnet's own rate limit still applies).
+     */
+    private static final int MAX_PENDING_CONFIRMATIONS = 6;
+    private static final int MAX_SPECULATIVE_CONFIRMATIONS = 3;
     /** Coflnet sales prices are looked up ahead of time at most this often... */
     private static final long PREFETCH_EVERY_MS = 10_000L;
     /** ...starting a while after the first scan, once our own sales had their chance. */
@@ -633,7 +639,8 @@ public final class Engine {
         // against Coflnet when that could add the missing data: in the background, so the round
         // trip never delays anything else.
         boolean unsure = flip == null || flip.weak || Double.isNaN(flip.valuation.volumePerDay);
-        if (unsure && pendingConfirmations.get() < MAX_PENDING_CONFIRMATIONS && auctionFinder.worthConfirming(listing)) {
+        int slots = flip != null ? MAX_PENDING_CONFIRMATIONS : MAX_SPECULATIVE_CONFIRMATIONS;
+        if (unsure && pendingConfirmations.get() < slots && auctionFinder.worthConfirming(listing)) {
             confirm(listing);
         } else if (flip != null) {
             notifyAuction(flip);

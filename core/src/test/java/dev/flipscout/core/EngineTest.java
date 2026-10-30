@@ -466,6 +466,53 @@ class EngineTest {
     }
 
     @Test
+    void realFlipsAreConfirmedEvenWhenManyLongShotsCameFirst() {
+        config.sourceCoflnet = true;
+        ManualExecutor background = new ManualExecutor();
+        engine.useExecutors(null, background);
+        String[] market = new String[7];
+        market[0] = hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L);
+        market[1] = hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L);
+        market[2] = hyperion("a3", "s3", 920_000_000L, T0 - 3_600_000L);
+        for (int i = 0; i < 4; i++) {
+            market[3 + i] = TestData.auction("x" + i, "s", "Thing " + i, "RARE", 100_000_000L, true, T0 - 3_600_000L,
+                TestData.plainItem("THING_" + i));
+        }
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0, market));
+        http.put(ENDED, TestData.endedPage(T0));
+        engine.tick();
+        background.runAll();
+
+        // Four auctions that are not flips on our data alone, but might be with Coflnet's prices,
+        // come before a real one.
+        http.put("https://sky.coflnet.com/api/item/price/HYPERION", "{\"median\":890000000,\"volume\":4}");
+        long t1 = T0 + 60_000;
+        String[] page = new String[12];
+        System.arraycopy(market, 0, page, 0, 7);
+        for (int i = 0; i < 4; i++) {
+            page[7 + i] = TestData.auction("y" + i, "s", "Thing " + i, "RARE", 90_000_000L, true, t1 - 10_000,
+                TestData.plainItem("THING_" + i));
+        }
+        page[11] = hyperion("new", "s4", 750_000_000L, t1 - 10_000);
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1, page));
+        clock.set(t1 + 1_000);
+        engine.tick();
+        // Not sent unchecked: it waits for Coflnet like the long shots.
+        assertTrue(platform.withCommand("/viewauction new").isEmpty());
+        background.runAll();
+        assertEquals(1, http.count("https://sky.coflnet.com/api/item/price/HYPERION"));
+        List<Msg> flips = platform.withCommand("/viewauction new");
+        assertEquals(1, flips.size());
+        assertFalse(flips.get(0).toPlainString().contains("⚠"), flips.get(0).toPlainString());
+        // Only three long shots were checked.
+        int checked = 0;
+        for (int i = 0; i < 4; i++) {
+            checked += http.count("https://sky.coflnet.com/api/item/price/THING_" + i);
+        }
+        assertEquals(3, checked);
+    }
+
+    @Test
     void weakFlipsStillArriveWhenCoflnetIsDown() {
         config.sourceCoflnet = true;
         ManualExecutor background = new ManualExecutor();
