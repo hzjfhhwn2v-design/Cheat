@@ -5,7 +5,7 @@
     "description": "Hypixel SkyBlock auction and bazaar flip notifier, powered by the official API and Coflnet, with a profit tracker and Discord reports. Never buys anything by itself.",
     "version": "${version}",
     "mcversion": "1.8.9",
-    "authorList": ["FlipScout"],
+    "authorList": ["yrqs", "baldih"],
     "credits": "Data: Hypixel API, Coflnet (sky.coflnet.com)",
     "logoFile": "flipscout_icon.png"
   }

@@ -66,8 +66,8 @@ final class ForgePlatform implements Platform {
             ChatComponentText text = new ChatComponentText(part.text);
             ChatStyle style = new ChatStyle();
             if (part.command != null) {
-                ClickEvent.Action action = part.click == Msg.Click.SUGGEST
-                    ? ClickEvent.Action.SUGGEST_COMMAND : ClickEvent.Action.RUN_COMMAND;
+                ClickEvent.Action action = part.click == Msg.Click.URL ? ClickEvent.Action.OPEN_URL
+                    : part.click == Msg.Click.SUGGEST ? ClickEvent.Action.SUGGEST_COMMAND : ClickEvent.Action.RUN_COMMAND;
                 style.setChatClickEvent(new ClickEvent(action, part.command));
             }
             if (part.hover != null) {

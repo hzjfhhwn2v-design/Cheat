@@ -15,6 +15,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
 
+import java.net.URI;
 import java.util.Locale;
 
 final class FabricPlatform implements Platform {
@@ -62,9 +63,15 @@ final class FabricPlatform implements Platform {
         for (Msg.Part part : message.parts()) {
             Style style = Style.EMPTY;
             if (part.command != null) {
-                style = style.withClickEvent(part.click == Msg.Click.SUGGEST
-                    ? new ClickEvent.SuggestCommand(part.command)
-                    : new ClickEvent.RunCommand(part.command));
+                ClickEvent click;
+                if (part.click == Msg.Click.URL) {
+                    click = new ClickEvent.OpenUrl(URI.create(part.command));
+                } else if (part.click == Msg.Click.SUGGEST) {
+                    click = new ClickEvent.SuggestCommand(part.command);
+                } else {
+                    click = new ClickEvent.RunCommand(part.command);
+                }
+                style = style.withClickEvent(click);
             }
             if (part.hover != null) {
                 style = style.withHoverEvent(new HoverEvent.ShowText(Component.literal(part.hover)));

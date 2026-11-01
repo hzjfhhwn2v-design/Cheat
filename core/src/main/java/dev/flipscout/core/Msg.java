@@ -10,11 +10,12 @@ import java.util.List;
 public final class Msg {
     public static final String PREFIX = "§6[FlipScout]§r ";
 
-    public enum Click { RUN, SUGGEST }
+    /** RUN and SUGGEST carry a command, URL a web address opened in the browser. */
+    public enum Click { RUN, SUGGEST, URL }
 
     public static final class Part {
         public final String text;
-        /** Command (with leading slash) run or suggested on click, or null. */
+        /** Command (with leading slash) run or suggested on click, the address of a URL click, or null. */
         public final String command;
         public final Click click;
         /** Hover text with § codes and newlines, or null. */
@@ -55,6 +56,12 @@ public final class Msg {
 
     public Msg suggest(String text, String command, String hover) {
         parts.add(new Part(text, command, Click.SUGGEST, hover));
+        return this;
+    }
+
+    /** A link that opens {@code url} in the browser (Minecraft asks first). */
+    public Msg link(String text, String url, String hover) {
+        parts.add(new Part(text, url, Click.URL, hover));
         return this;
     }
 

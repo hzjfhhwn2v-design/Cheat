@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "FlipScout",
   "description": "Hypixel SkyBlock auction and bazaar flip notifier, powered by the official API and Coflnet, with a profit tracker and Discord reports. Never buys anything by itself.",
-  "authors": ["FlipScout"],
+  "authors": ["yrqs", "baldih"],
   "license": "ARR",
   "icon": "assets/flipscout/icon.png",
   "environment": "client",
