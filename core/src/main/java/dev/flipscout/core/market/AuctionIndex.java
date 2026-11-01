@@ -28,6 +28,8 @@ public final class AuctionIndex {
         public final long firstSeen;
         /** Valuable upgrades applied to the item, or null. */
         public final Upgrades upgrades;
+        /** Pet candy used on a pet (0 when none); -1 for other items and pets that do not say. */
+        public final int petCandy;
         long lastScan;
 
         public Listing(String uuid, String seller, String itemName, String tier, ItemKey key, long price, int count,
@@ -37,6 +39,11 @@ public final class AuctionIndex {
 
         public Listing(String uuid, String seller, String itemName, String tier, ItemKey key, long price, int count,
                        long start, long end, long firstSeen, long scan, Upgrades upgrades) {
+            this(uuid, seller, itemName, tier, key, price, count, start, end, firstSeen, scan, upgrades, -1);
+        }
+
+        public Listing(String uuid, String seller, String itemName, String tier, ItemKey key, long price, int count,
+                       long start, long end, long firstSeen, long scan, Upgrades upgrades, int petCandy) {
             this.uuid = uuid;
             this.seller = seller;
             this.itemName = itemName;
@@ -50,6 +57,7 @@ public final class AuctionIndex {
             this.firstSeen = firstSeen;
             this.lastScan = scan;
             this.upgrades = upgrades;
+            this.petCandy = petCandy;
         }
     }
 

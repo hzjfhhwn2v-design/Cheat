@@ -21,7 +21,7 @@ final class Notifier {
         AuctionIndex.Listing l = flip.listing;
         String name = itemName(l);
         StringBuilder line = new StringBuilder(Msg.PREFIX)
-            .append("§eAH ").append(name)
+            .append("§eAH ").append(name).append(candyTag(l.petCandy))
             .append(" §8» §6").append(Coins.compact(l.price))
             .append(" §8→ §a").append(Coins.compact(flip.resale))
             .append(" §8| §2+").append(Coins.compact(flip.profit))
@@ -47,6 +47,9 @@ final class Notifier {
         StringBuilder h = new StringBuilder();
         h.append(itemName(l)).append('\n');
         h.append("§8").append(l.key.key).append('\n');
+        if (l.petCandy >= 0) {
+            h.append("§7Pet candy: ").append(l.petCandy == 0 ? "§anone" : "§c" + l.petCandy + " used").append('\n');
+        }
         h.append("§7Price: §6").append(Coins.full(l.price));
         if (l.count > 1) {
             h.append(" §8(").append(Coins.compact(l.unitPrice)).append(" each)");
@@ -58,7 +61,11 @@ final class Notifier {
         } else {
             if (!Double.isNaN(v.lbinOther)) {
                 h.append("§7  Lowest BIN (others): §f").append(Coins.compact(v.lbinOther))
-                    .append(" §8(").append(v.otherListings).append(" listed)\n");
+                    .append(" §8(").append(v.otherListings).append(" listed");
+                if (v.lbinCandy >= 0) {
+                    h.append(", cheapest with ").append(v.lbinCandy == 0 ? "no candy" : v.lbinCandy + " candy");
+                }
+                h.append(")\n");
             }
             if (!Double.isNaN(v.salesMedian)) {
                 h.append("§7  Recent sales median: §f").append(Coins.compact(v.salesMedian))
@@ -104,6 +111,9 @@ final class Notifier {
         }
         if (flip.upgradeOnly) {
             h.append("§bOnly worth it counting upgrades: reselling may take longer\n");
+        }
+        if (l.petCandy > 0 && v.lbinCandy == 0) {
+            h.append("§cThis pet has candy, the lowest BIN has none: it may sell for less\n");
         }
         h.append("§eClick to open the auction");
         return h.toString();
@@ -194,8 +204,8 @@ final class Notifier {
     /** One hover line for an auction flip the blacklist hid. */
     String blockedLine(AuctionFlip flip, String entry) {
         AuctionIndex.Listing l = flip.listing;
-        return itemName(l) + " §8» §6" + Coins.compact(l.price) + " §8→ §a" + Coins.compact(flip.resale)
-            + " §2+" + Coins.compact(flip.profit) + " §8(" + entry + ")";
+        return itemName(l) + candyTag(l.petCandy) + " §8» §6" + Coins.compact(l.price) + " §8→ §a"
+            + Coins.compact(flip.resale) + " §2+" + Coins.compact(flip.profit) + " §8(" + entry + ")";
     }
 
     /** One hover line for a bazaar flip the blacklist hid. */
@@ -223,6 +233,11 @@ final class Notifier {
             result += " §7x" + l.count;
         }
         return result;
+    }
+
+    /** " [no candy]" or " [3 candy]" after a pet's name; nothing for other items and pets that do not say. */
+    static String candyTag(int petCandy) {
+        return petCandy < 0 ? "" : petCandy == 0 ? " §a[no candy]" : " §c[" + petCandy + " candy]";
     }
 
     private static String volume(double perDay) {

@@ -80,6 +80,7 @@ public final class PriceService {
         if (lowest != null) {
             v.lbinOther = lowest.unitPrice;
             v.otherListings = index.count(key.key, excludeUuid);
+            v.lbinCandy = lowest.petCandy;
         }
 
         int nowMinute = (int) (clock.getAsLong() / 60_000L);

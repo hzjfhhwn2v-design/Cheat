@@ -159,6 +159,18 @@ class ItemKeysTest {
     }
 
     @Test
+    void petCandyIsReadFromThePetInfo() throws IOException {
+        assertEquals(0, ItemKeys.decode(TestData.pet("ENDER_DRAGON", "LEGENDARY", null, 0), "[Lvl 100] Ender Dragon").petCandy);
+        ItemKeys.Decoded candied = ItemKeys.decode(TestData.pet("ENDER_DRAGON", "LEGENDARY", null, 7), "[Lvl 100] Ender Dragon");
+        assertEquals(7, candied.petCandy);
+        // Candy is shown, not used to split the pets compared with each other.
+        assertEquals("PET_ENDER_DRAGON;LEGENDARY;L100", candied.key.key);
+        // A pet that does not say, and anything that is not a pet.
+        assertEquals(-1, ItemKeys.decode(TestData.pet("BEE", "RARE", null), "[Lvl 1] Bee").petCandy);
+        assertEquals(-1, ItemKeys.decode(TestData.plainItem("HYPERION"), "Hyperion").petCandy);
+    }
+
+    @Test
     void petLevelFallsBackToTheNbtName() throws IOException {
         ItemKeys.Decoded d = ItemKeys.decode(TestData.pet("BEE", "RARE", "§7[Lvl 1] §9Bee"), null);
         assertEquals("PET_BEE;RARE;L1", d.key.key);

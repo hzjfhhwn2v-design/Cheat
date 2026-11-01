@@ -52,16 +52,23 @@ public final class ItemKeys {
         public final String name;
         /** Valuable upgrades applied to the item, or null. */
         public final Upgrades upgrades;
+        /** Pet candy used on a pet (0 when none); -1 for other items and pets that do not say. */
+        public final int petCandy;
 
         public Decoded(ItemKey key, int count, String name) {
             this(key, count, name, null);
         }
 
         public Decoded(ItemKey key, int count, String name, Upgrades upgrades) {
+            this(key, count, name, upgrades, -1);
+        }
+
+        public Decoded(ItemKey key, int count, String name, Upgrades upgrades, int petCandy) {
             this.key = key;
             this.count = count;
             this.name = name;
             this.upgrades = upgrades;
+            this.petCandy = petCandy;
         }
     }
 
@@ -79,6 +86,11 @@ public final class ItemKeys {
             name = Text.stripCodes(NbtReader.string(NbtReader.compound(tag.get("display")).get("Name")));
         }
         Map<String, Object> extra = NbtReader.compound(tag.get("ExtraAttributes"));
+        if ("PET".equals(upper(NbtReader.string(extra.get("id"))))) {
+            // One read of petInfo for the key, the held item and the candy.
+            Map<String, Object> info = petInfo(extra);
+            return new Decoded(pet(info, name), count, name, count == 1 ? petUpgrades(info) : null, petCandy(info));
+        }
         ItemKey key = fromExtraAttributes(extra, name);
         if (key == null) {
             return null;
@@ -109,7 +121,7 @@ public final class ItemKeys {
         }
         switch (id) {
             case "PET":
-                return pet(extra, itemName);
+                return pet(petInfo(extra), itemName);
             case "ENCHANTED_BOOK":
                 return book(extra);
             case "RUNE":
@@ -129,12 +141,10 @@ public final class ItemKeys {
      * described by their key already.
      */
     public static Upgrades upgrades(String id, Map<String, Object> extra) {
-        Upgrades.Builder b = new Upgrades.Builder();
         if ("PET".equals(id)) {
-            Map<String, Object> info = JsonTree.obj(JsonTree.parseQuiet(NbtReader.string(extra.get("petInfo"))));
-            b.add(Upgrades.Kind.PET_ITEM, JsonTree.str(info.get("heldItem")), 1);
-            return b.build();
+            return petUpgrades(petInfo(extra));
         }
+        Upgrades.Builder b = new Upgrades.Builder();
         if ("ENCHANTED_BOOK".equals(id) || "RUNE".equals(id) || "UNIQUE_RUNE".equals(id) || "POTION".equals(id)
             || "ATTRIBUTE_SHARD".equals(id)) {
             return null;
@@ -241,8 +251,22 @@ public final class ItemKeys {
         return new ItemKey(id, id, id, id);
     }
 
-    private static ItemKey pet(Map<String, Object> extra, String itemName) {
-        Map<String, Object> info = JsonTree.obj(JsonTree.parseQuiet(NbtReader.string(extra.get("petInfo"))));
+    /** A pet's petInfo: a JSON string inside the NBT ({"type": "ENDER_DRAGON", "candyUsed": 0, ...}). */
+    private static Map<String, Object> petInfo(Map<String, Object> extra) {
+        return JsonTree.obj(JsonTree.parseQuiet(NbtReader.string(extra.get("petInfo"))));
+    }
+
+    private static Upgrades petUpgrades(Map<String, Object> info) {
+        return new Upgrades.Builder().add(Upgrades.Kind.PET_ITEM, JsonTree.str(info.get("heldItem")), 1).build();
+    }
+
+    /** How many pet candies were used on a pet (0 when none), or -1 when its petInfo does not say. */
+    static int petCandy(Map<String, Object> info) {
+        double candy = JsonTree.num(info.get("candyUsed"), Double.NaN);
+        return Double.isNaN(candy) ? -1 : (int) Math.max(0, candy);
+    }
+
+    private static ItemKey pet(Map<String, Object> info, String itemName) {
         String type = upper(JsonTree.str(info.get("type")));
         if (type == null) {
             return new ItemKey("PET", "PET_UNKNOWN", null, null);

@@ -44,7 +44,13 @@ public final class TestData {
     }
 
     public static String pet(String type, String tier, String displayName) {
-        String petInfo = "{\"type\":\"" + type + "\",\"active\":false,\"exp\":0.0,\"tier\":\"" + tier + "\",\"hideInfo\":false}";
+        return pet(type, tier, displayName, null);
+    }
+
+    /** A pet with {@code candy} pet candies used; null leaves "candyUsed" out of its petInfo. */
+    public static String pet(String type, String tier, String displayName, Integer candy) {
+        String petInfo = "{\"type\":\"" + type + "\",\"active\":false,\"exp\":0.0,\"tier\":\"" + tier + "\",\"hideInfo\":false"
+            + (candy != null ? ",\"candyUsed\":" + candy : "") + "}";
         return itemBytes(map("id", "PET", "petInfo", petInfo), displayName, 1);
     }
 

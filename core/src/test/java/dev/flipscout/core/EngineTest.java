@@ -47,6 +47,42 @@ class EngineTest {
         return TestData.auction(uuid, seller, "Hyperion", "LEGENDARY", price, true, start, TestData.plainItem("HYPERION"));
     }
 
+    private static String dragon(String uuid, long price, long start, int candy) {
+        return TestData.auction(uuid, "s-" + uuid, "[Lvl 100] Ender Dragon", "LEGENDARY", price, true, start,
+            TestData.pet("ENDER_DRAGON", "LEGENDARY", null, candy));
+    }
+
+    @Test
+    void petFlipsSayHowMuchPetCandyThePetHas() {
+        http.put(PAGE0, TestData.auctionPage(0, 1, T0,
+            dragon("d1", 600_000_000L, T0 - 3_600_000L, 0),
+            dragon("d2", 610_000_000L, T0 - 3_600_000L, 0)));
+        String[] sold = new String[5];
+        for (int i = 0; i < sold.length; i++) {
+            // Ended auctions have no item name: the level comes from the name in the NBT.
+            sold[i] = TestData.ended("e" + i, 598_000_000L + i * 1_000_000L, true, T0 - 30_000,
+                TestData.pet("ENDER_DRAGON", "LEGENDARY", "§6[Lvl 100] Ender Dragon", 0));
+        }
+        http.put(ENDED, TestData.endedPage(T0, sold));
+        engine.tick();
+
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            dragon("d1", 600_000_000L, T0 - 3_600_000L, 0),
+            dragon("d2", 610_000_000L, T0 - 3_600_000L, 0),
+            dragon("candied", 450_000_000L, t1 - 10_000, 10)));
+        clock.set(t1 + 5_000);
+        engine.tick();
+
+        List<Msg> candied = platform.withCommand("/viewauction candied");
+        assertEquals(1, candied.size(), platform.allText());
+        assertTrue(candied.get(0).toPlainString().contains("[Lvl 100] Ender Dragon [10 candy]"), candied.get(0).toPlainString());
+        String hover = candied.get(0).parts().get(0).hover;
+        assertTrue(hover.contains("Pet candy: §c10 used"), hover);
+        assertTrue(hover.contains("cheapest with no candy"), hover);
+        assertTrue(hover.contains("it may sell for less"), hover);
+    }
+
     /** Two listings at 900M/910M and five sales around 895M. */
     private void initialMarket() {
         http.put(PAGE0, TestData.auctionPage(0, 1, T0,

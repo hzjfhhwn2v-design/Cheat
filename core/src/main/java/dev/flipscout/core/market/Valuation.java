@@ -28,6 +28,8 @@ public final class Valuation {
     /** Cheapest other BIN of the same key in our own index. */
     public double lbinOther = Double.NaN;
     public int otherListings;
+    /** Pet candy used on the pet the lowest BIN comes from; -1 when there is none or it does not say. */
+    public int lbinCandy = -1;
 
     /** Median of BIN sales we recorded ourselves. */
     public double salesMedian = Double.NaN;

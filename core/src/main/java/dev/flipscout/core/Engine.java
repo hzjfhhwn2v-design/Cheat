@@ -590,7 +590,7 @@ public final class Engine {
         }
         ItemKey existing = canonicalKeys.putIfAbsent(decoded.key.key, decoded.key);
         if (existing != null && existing != decoded.key && existing.equals(decoded.key)) {
-            return new ItemKeys.Decoded(existing, decoded.count, decoded.name, decoded.upgrades);
+            return new ItemKeys.Decoded(existing, decoded.count, decoded.name, decoded.upgrades, decoded.petCandy);
         }
         return decoded;
     }
@@ -606,7 +606,7 @@ public final class Engine {
             ItemKeys.Decoded decoded = auction.decoded;
             AuctionIndex.Listing listing = new AuctionIndex.Listing(auction.uuid, normalizeUuid(auction.seller),
                 decoded.name, auction.tier == null ? null : auction.tier.intern(), decoded.key, auction.startingBid,
-                decoded.count, auction.start, auction.end, now, scan, decoded.upgrades);
+                decoded.count, auction.start, auction.end, now, scan, decoded.upgrades, decoded.petCandy);
             index.add(listing);
             if (initialScanDone && now - clockSkew - auction.start < FRESH_MS) {
                 consider(listing);
