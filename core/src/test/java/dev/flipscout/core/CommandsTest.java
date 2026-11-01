@@ -247,6 +247,37 @@ class CommandsTest {
     }
 
     @Test
+    void creditsNameTheAuthorsAndTheSources() {
+        run("credits");
+        String text = platform.allText();
+        assertTrue(text.contains("Made by yrqs and baldih"), text);
+        assertTrue(text.contains("Kat, Craft, Forge, Fusion, NPC and Book flips"), text);
+        assertTrue(text.contains("API by SkyCofl (sky.coflnet.com)"), text);
+        Msg.Part link = platform.messages.get(2).parts().get(1);
+        assertEquals(Msg.Click.URL, link.click);
+        assertEquals("https://sky.coflnet.com/data", link.command);
+    }
+
+    @Test
+    void skyCoflListsAreShownWithTheirSource() {
+        FakeFetcher http = new FakeFetcher().put("https://sky.coflnet.com/api/craft/profit",
+            "[{\"itemId\":\"HUNTER_RING\",\"itemName\":\"§5Hunter Ring\",\"sellPrice\":12000000,\"median\":12000000,"
+            + "\"ingredients\":[{\"itemId\":\"X\",\"count\":2,\"cost\":1000000}],\"volume\":14.5,"
+            + "\"reqCollection\":{\"name\":\"Hunter\",\"level\":2}}]");
+        FakePlatform platform = new FakePlatform();
+        FlipScout fs = new FlipScout(platform, new File(dir, "lists"), http, new AtomicLong(1_800_000_000_000L)::get);
+        fs.command(new String[] {"craft", "5"});
+        String text = platform.allText();
+        assertTrue(text.contains("Craft flips (best 1 by profit) [SkyCofl]"), text);
+        assertTrue(text.contains("CRAFT Hunter Ring Hunter II » 1M → 11.6M | +10.6M | 15/d [RECIPE]"), text);
+        fs.command(new String[] {"kat", "lots"});
+        assertTrue(platform.allText().contains("Usage: /flipscout kat [number]"), platform.allText());
+        fs.config().sourceCoflnet = false;
+        fs.command(new String[] {"forge"});
+        assertTrue(platform.allText().contains("SkyCofl, which is turned off"), platform.allText());
+    }
+
+    @Test
     void tabCompletion() {
         assertTrue(flipScout.complete(new String[] {"se"}).contains("set"));
         assertEquals(Arrays.asList("ah.minProfit", "ah.minPercent"), flipScout.complete(new String[] {"set", "ah.minP"}));

@@ -22,6 +22,7 @@ public final class Status {
     public volatile long lastItems;
     public final AtomicInteger auctionNotifications = new AtomicInteger();
     public final AtomicInteger bazaarNotifications = new AtomicInteger();
+    public final AtomicInteger otherNotifications = new AtomicInteger();
 
     private final Map<String, String> errors = new ConcurrentHashMap<String, String>();
 

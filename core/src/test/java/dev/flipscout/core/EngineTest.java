@@ -83,6 +83,34 @@ class EngineTest {
         assertTrue(hover.contains("it may sell for less"), hover);
     }
 
+    @Test
+    void skyCoflListsAreSummedUpOnceThenAlertNewFlips() {
+        config.sourceCoflnet = true;
+        config.otherKatNotify = false;
+        config.otherForgeNotify = false;
+        config.otherFusionNotify = false;
+        config.otherNpcNotify = false;
+        config.otherBooksNotify = false;
+        String crafts = "https://sky.coflnet.com/api/craft/profit";
+        String entry = "{\"itemId\":\"%s\",\"itemName\":\"%s\",\"sellPrice\":9000000,\"median\":9000000,"
+            + "\"ingredients\":[{\"itemId\":\"I\",\"count\":1,\"cost\":1000000}],\"volume\":20.0}";
+        http.put(crafts, "[" + String.format(entry, "OLD_THING", "Old Thing") + "]");
+        engine.tick();
+        assertEquals(1, http.count(crafts));
+        assertTrue(platform.allText().contains("Other flips above your thresholds right now: 1 craft"), platform.allText());
+        assertTrue(platform.withCommand("/viewrecipe OLD_THING").isEmpty());
+
+        http.put(crafts, "[" + String.format(entry, "OLD_THING", "Old Thing") + "," + String.format(entry, "NEW_THING", "New Thing") + "]");
+        clock.addAndGet(5 * 60_000L);
+        engine.tick();
+        assertEquals(2, http.count(crafts));
+        String text = platform.allText();
+        assertTrue(text.contains("CRAFT New Thing » 1M → 8.82M | +7.82M | 20/d [RECIPE]"), text);
+        assertTrue(!text.contains("CRAFT Old Thing"), text);
+        assertEquals(1, engine.status.otherNotifications.get());
+        assertEquals("/viewrecipe NEW_THING", engine.recent().get(0).message.parts().get(0).command);
+    }
+
     /** Two listings at 900M/910M and five sales around 895M. */
     private void initialMarket() {
         http.put(PAGE0, TestData.auctionPage(0, 1, T0,

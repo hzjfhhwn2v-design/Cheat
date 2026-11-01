@@ -2,6 +2,10 @@ package dev.flipscout.core;
 
 import dev.flipscout.core.api.BazaarSnapshot;
 import dev.flipscout.core.api.ItemCatalog;
+import dev.flipscout.core.extra.Opportunity;
+import dev.flipscout.core.extra.OpportunityKind;
+import dev.flipscout.core.extra.OpportunityText;
+import dev.flipscout.core.extra.SupplyItem;
 import dev.flipscout.core.flip.AuctionFlip;
 import dev.flipscout.core.flip.BazaarFlip;
 import dev.flipscout.core.item.ItemKey;
@@ -12,6 +16,7 @@ import dev.flipscout.core.util.Coins;
 import dev.flipscout.core.util.Text;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -33,7 +38,8 @@ import java.util.function.LongSupplier;
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
-        "stock", "discord", "coop", "set", "config", "blacklist", "status", "reload", "test");
+        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "discord", "coop", "set", "config",
+        "blacklist", "status", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -146,6 +152,20 @@ final class Commands {
                 case "coop":
                     coop();
                     break;
+                case "kat":
+                case "craft":
+                case "forge":
+                case "fusion":
+                case "npc":
+                case "books":
+                    otherFlips(OpportunityKind.byId(args[0]), args);
+                    break;
+                case "lowsupply":
+                    lowSupply(args);
+                    break;
+                case "credits":
+                    credits();
+                    break;
                 case "status":
                 case "stato":
                     status();
@@ -183,6 +203,8 @@ final class Commands {
         helpLine("ah on|off", "ah ", "BIN auction notifications");
         helpLine("bz on|off", "bz ", "bazaar notifications (also: bz flip|crash|npc on|off)");
         helpLine("top [ah|bz] [n]", "top ", "the best deals right now");
+        helpLine("kat|craft|forge|fusion|npc|books [n]", "craft", "other flips, from SkyCofl's lists");
+        helpLine("lowsupply [n]", "lowsupply", "items with few auctions listed");
         helpLine("recent", "recent", "latest notifications");
         helpLine("open", "open", "opens the latest notification");
         helpLine("profits", "profits", "how much you made: session, today, total");
@@ -196,6 +218,7 @@ final class Commands {
         helpLine("config [filter]", "config", "shows the settings");
         helpLine("blacklist add|remove|list [ID]", "blacklist ", "items to ignore");
         helpLine("status", "status", "data source status");
+        helpLine("credits", "credits", "who made the mod and where the data comes from");
         helpLine("reload", "reload", "reloads the settings file");
         helpLine("test", "test", "shows a test notification");
     }
@@ -530,7 +553,11 @@ final class Commands {
         if (!members.isEmpty()) {
             line("Coop", String.join(", ", members) + " §8(their auctions are never notified)");
         }
-        line("Notifications this session", s.auctionNotifications + " auctions, " + s.bazaarNotifications + " bazaar");
+        line("SkyCofl lists", !config.sourceCoflnet ? "§8disabled"
+            : engine.opportunities().listsLoaded() + " loaded, last answer " + Text.ago(now, engine.opportunities().lastSuccess())
+                + (engine.opportunities().lastError() != null ? " §8(" + engine.opportunities().lastError() + ")" : ""));
+        line("Notifications this session", s.auctionNotifications + " auctions, " + s.bazaarNotifications + " bazaar, "
+            + s.otherNotifications + " other");
         line("Discord", discordState(now));
         if (config.trackerEnabled) {
             ProfitTracker.Session session = tracker.session();
@@ -607,6 +634,114 @@ final class Commands {
         if (config.sound) {
             platform.playSound(true);
         }
+    }
+
+    // ---- SkyCofl's lists ----
+
+    private void otherFlips(final OpportunityKind kind, String[] args) {
+        if (!coflnetOn()) {
+            return;
+        }
+        final int limit = limit(args, 1, 10);
+        info("§7Searching...");
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                List<Opportunity> list;
+                try {
+                    list = engine.opportunities().list(kind, limit);
+                } catch (IOException | RuntimeException e) {
+                    error("Could not read the " + kind.title + " flips from SkyCofl: " + e.getMessage());
+                    return;
+                }
+                String what = kind.title + " flips";
+                if (list.isEmpty()) {
+                    info("§7No " + what + " with a profit right now.");
+                    return;
+                }
+                platform.showMessage(OpportunityText.header(what + " §8(best " + list.size()
+                    + (kind == OpportunityKind.FORGE ? " by profit per hour" : " by profit") + ")"));
+                for (Opportunity o : list) {
+                    platform.showMessage(OpportunityText.line(o));
+                }
+                if (kind == OpportunityKind.FORGE && config.otherForgeHotm == 0) {
+                    platform.showMessage(new Msg().suggest("§8  Tip: set your HotM level to hide the forges you cannot do yet",
+                        "/flipscout set other.forge.hotm ", "§eClick to type §f/flipscout set other.forge.hotm <level>"));
+                }
+            }
+        });
+    }
+
+    private void lowSupply(String[] args) {
+        if (!coflnetOn()) {
+            return;
+        }
+        final int limit = limit(args, 1, 10);
+        info("§7Searching...");
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                List<SupplyItem> items;
+                try {
+                    items = engine.opportunities().lowSupply(limit);
+                } catch (IOException | RuntimeException e) {
+                    error("Could not read the low supply items from SkyCofl: " + e.getMessage());
+                    return;
+                }
+                if (items.isEmpty()) {
+                    info("§7SkyCofl has no low supply items right now.");
+                    return;
+                }
+                platform.showMessage(OpportunityText.header("Low supply items §8(few listed, most traded first)"));
+                for (SupplyItem s : items) {
+                    String name = Text.rarityColor(s.tier) + s.name;
+                    String line = "§7  " + name + " §8» §f" + s.supply + " listed §8| §7lowest §6" + compact(s.lowest)
+                        + " §8| §7median §a" + compact(s.median) + (s.perDay > 0 ? " §8| §7" + Coins.decimal(s.perDay, 1) + "/d" : "");
+                    String hover = name + "\n§7Listed now: §f" + s.supply + "\n§7Lowest BIN: §6" + compact(s.lowest)
+                        + "\n§7Median price: §a" + compact(s.median) + "\n§7Sold a day: §f"
+                        + (s.perDay > 0 ? Coins.decimal(s.perDay, 1) : "?") + "\n§8Data: SkyCofl (sky.coflnet.com)";
+                    platform.showMessage(s.lowestUuid != null
+                        ? new Msg().run(line, "/viewauction " + s.lowestUuid, hover + "\n§eClick to open the cheapest auction")
+                        : new Msg().add(line, hover));
+                }
+            }
+        });
+    }
+
+    private boolean coflnetOn() {
+        if (!config.sourceCoflnet) {
+            info("§7These lists come from SkyCofl, which is turned off: §e/flipscout set source.coflnet on");
+            return false;
+        }
+        return true;
+    }
+
+    private static String compact(double coins) {
+        return coins > 0 ? Coins.compact(coins) : "?";
+    }
+
+    /** A count from {@code args[index]}, 1 to 30, or {@code fallback}. */
+    private static int limit(String[] args, int index, int fallback) {
+        if (args.length <= index) {
+            return fallback;
+        }
+        try {
+            return Math.max(1, Math.min(30, Integer.parseInt(args[index])));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Usage: /flipscout " + args[0] + " [number]");
+        }
+    }
+
+    private void credits() {
+        info("§fCredits");
+        platform.showMessage(Msg.plain("§7  Made by §fyrqs §7and §fbaldih"));
+        platform.showMessage(new Msg().add("§7  Kat, Craft, Forge, Fusion, NPC and Book flips, low supply items, price and"
+                + " bazaar history, past mayors, player auctions, item prices and names: ")
+            .link("§bAPI by SkyCofl (sky.coflnet.com)", OpportunityText.DATA_URL,
+                "§7SkyCofl's free API for developers\n§eClick to open sky.coflnet.com"));
+        platform.showMessage(new Msg().add("§7  Auctions, sold auctions, bazaar, items and elections: ")
+            .link("§bHypixel public API", "https://api.hypixel.net", "§7Hypixel's public SkyBlock API"));
+        platform.showMessage(Msg.plain("§7  Player names: §fMojang API"));
     }
 
     // ---- Tab completion ----

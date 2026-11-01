@@ -83,6 +83,25 @@ public final class Config {
     public volatile boolean discordBazaar = false;
     public volatile long discordMinCoins = 0;
 
+    // Other flips, from SkyCofl's lists
+    public volatile boolean otherKatNotify = true;
+    public volatile long otherKatMinProfit = 5_000_000;
+    public volatile boolean otherCraftNotify = true;
+    public volatile long otherCraftMinProfit = 2_000_000;
+    public volatile double otherCraftMinVolume = 5;
+    public volatile boolean otherForgeNotify = true;
+    public volatile long otherForgeMinProfitPerHour = 1_000_000;
+    public volatile int otherForgeHotm = 0;
+    public volatile boolean otherFusionNotify = true;
+    public volatile long otherFusionMinProfit = 200_000;
+    public volatile boolean otherNpcNotify = true;
+    public volatile long otherNpcMinProfit = 1_000_000;
+    public volatile double otherNpcMinVolume = 1;
+    public volatile boolean otherBooksNotify = true;
+    public volatile long otherBooksMinProfit = 500_000;
+    public volatile int otherRefreshMinutes = 5;
+    public volatile int otherCooldownHours = 6;
+
     // Sources
     public volatile boolean sourceCoflnet = true;
     public volatile String urlHypixel = "https://api.hypixel.net";
@@ -111,14 +130,14 @@ public final class Config {
             return false;
         }
 
-        /** What the value may be ("10 - 600", "importo, es. 500k o 2m"), or "" when there is nothing to add. */
+        /** What the value may be ("10 - 600", "amount, e.g. 500k or 2m"), or "" when there is nothing to add. */
         public String hint() {
             return "";
         }
 
         public abstract String get(Config config);
 
-        /** @throws IllegalArgumentException with an Italian message when the value is invalid */
+        /** @throws IllegalArgumentException with a message for the player when the value is invalid */
         public abstract void set(Config config, String value);
 
         /** Values offered by tab completion. */
@@ -338,6 +357,78 @@ public final class Config {
             new CoinsSetting("discord.minCoins", "Minimum amount", "Do not send trades below this amount (0 = all)", 0) {
                 long read(Config c) { return c.discordMinCoins; }
                 void write(Config c, long v) { c.discordMinCoins = v; }
+            }),
+        new Section("Other flips (SkyCofl)",
+            new BoolSetting("other.kat.notify", "Kat flips: alerts", "Alert about pets worth upgrading at Kat and reselling") {
+                boolean read(Config c) { return c.otherKatNotify; }
+                void write(Config c, boolean v) { c.otherKatNotify = v; }
+            },
+            new CoinsSetting("other.kat.minProfit", "Kat: minimum profit", "Minimum profit of a Kat flip after fees", 0) {
+                long read(Config c) { return c.otherKatMinProfit; }
+                void write(Config c, long v) { c.otherKatMinProfit = v; }
+            },
+            new BoolSetting("other.craft.notify", "Craft flips: alerts", "Alert about items worth crafting from bazaar ingredients") {
+                boolean read(Config c) { return c.otherCraftNotify; }
+                void write(Config c, boolean v) { c.otherCraftNotify = v; }
+            },
+            new CoinsSetting("other.craft.minProfit", "Craft: minimum profit", "Minimum profit of a craft after fees", 0) {
+                long read(Config c) { return c.otherCraftMinProfit; }
+                void write(Config c, long v) { c.otherCraftMinProfit = v; }
+            },
+            new DecimalSetting("other.craft.minVolume", "Craft: minimum sales per day", "How many must sell a day", 0, 1e9) {
+                double read(Config c) { return c.otherCraftMinVolume; }
+                void write(Config c, double v) { c.otherCraftMinVolume = v; }
+            },
+            new BoolSetting("other.forge.notify", "Forge flips: alerts", "Alert about items worth forging in the Dwarven Mines") {
+                boolean read(Config c) { return c.otherForgeNotify; }
+                void write(Config c, boolean v) { c.otherForgeNotify = v; }
+            },
+            new CoinsSetting("other.forge.minProfitPerHour", "Forge: minimum profit per hour", "Minimum profit per hour of forging", 0) {
+                long read(Config c) { return c.otherForgeMinProfitPerHour; }
+                void write(Config c, long v) { c.otherForgeMinProfitPerHour = v; }
+            },
+            new IntSetting("other.forge.hotm", "Your Heart of the Mountain level", "Hides forges that need a higher HotM level"
+                + " (0 = show them all)", 0, 10) {
+                int read(Config c) { return c.otherForgeHotm; }
+                void write(Config c, int v) { c.otherForgeHotm = v; }
+            },
+            new BoolSetting("other.fusion.notify", "Fusion flips: alerts", "Alert about shard fusions worth doing") {
+                boolean read(Config c) { return c.otherFusionNotify; }
+                void write(Config c, boolean v) { c.otherFusionNotify = v; }
+            },
+            new CoinsSetting("other.fusion.minProfit", "Fusion: minimum profit", "Minimum profit of a fusion after tax", 0) {
+                long read(Config c) { return c.otherFusionMinProfit; }
+                void write(Config c, long v) { c.otherFusionMinProfit = v; }
+            },
+            new BoolSetting("other.npc.notify", "NPC flips: alerts", "Alert about items worth buying from an NPC and reselling") {
+                boolean read(Config c) { return c.otherNpcNotify; }
+                void write(Config c, boolean v) { c.otherNpcNotify = v; }
+            },
+            new CoinsSetting("other.npc.minProfit", "NPC: minimum profit", "Minimum profit per item after fees", 0) {
+                long read(Config c) { return c.otherNpcMinProfit; }
+                void write(Config c, long v) { c.otherNpcMinProfit = v; }
+            },
+            new DecimalSetting("other.npc.minVolume", "NPC: minimum sales per day", "How many must sell a day", 0, 1e9) {
+                double read(Config c) { return c.otherNpcMinVolume; }
+                void write(Config c, double v) { c.otherNpcMinVolume = v; }
+            },
+            new BoolSetting("other.books.notify", "Book flips: alerts", "Alert about enchanted books worth combining in an anvil") {
+                boolean read(Config c) { return c.otherBooksNotify; }
+                void write(Config c, boolean v) { c.otherBooksNotify = v; }
+            },
+            new CoinsSetting("other.books.minProfit", "Books: minimum profit", "Minimum profit of a book combination after tax", 0) {
+                long read(Config c) { return c.otherBooksMinProfit; }
+                void write(Config c, long v) { c.otherBooksMinProfit = v; }
+            },
+            new IntSetting("other.refreshMinutes", "Lists: refresh every (min)", "How often to download the lists that have"
+                + " alerts on", 2, 60) {
+                int read(Config c) { return c.otherRefreshMinutes; }
+                void write(Config c, int v) { c.otherRefreshMinutes = v; }
+            },
+            new IntSetting("other.cooldownHours", "Lists: hours before alerting again", "Hours before the same flip is"
+                + " alerted again while it lasts", 1, 72) {
+                int read(Config c) { return c.otherCooldownHours; }
+                void write(Config c, int v) { c.otherCooldownHours = v; }
             }),
         new Section("Data sources",
             new BoolSetting("source.coflnet", "Use Coflnet data", "Use Coflnet (sky.coflnet.com) for rare-item sales, volumes"

@@ -7,7 +7,14 @@ import dev.flipscout.core.api.CoflnetApi;
 import dev.flipscout.core.api.EndedAuction;
 import dev.flipscout.core.api.EndedPage;
 import dev.flipscout.core.api.HypixelApi;
+import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.ItemCatalog;
+import dev.flipscout.core.extra.CoflLists;
+import dev.flipscout.core.extra.Market;
+import dev.flipscout.core.extra.Opportunities;
+import dev.flipscout.core.extra.Opportunity;
+import dev.flipscout.core.extra.OpportunityKind;
+import dev.flipscout.core.extra.OpportunityText;
 import dev.flipscout.core.flip.AuctionFlip;
 import dev.flipscout.core.flip.AuctionFlipFinder;
 import dev.flipscout.core.flip.BazaarFlip;
@@ -197,6 +204,9 @@ public final class Engine {
     final BazaarFlipFinder bazaarFinder;
     final Status status = new Status();
     final Coop coop;
+    final Market market;
+    final CoflLists coflLists;
+    final Opportunities opportunities;
     private final Notifier notifier = new Notifier();
     private final BlockedFlips blocked = new BlockedFlips();
 
@@ -238,6 +248,7 @@ public final class Engine {
     private final AtomicBoolean bazaarJob = new AtomicBoolean();
     private final AtomicBoolean saveJob = new AtomicBoolean();
     private final AtomicBoolean prefetchJob = new AtomicBoolean();
+    private final AtomicBoolean otherJob = new AtomicBoolean();
     private final AtomicBoolean coopJob = new AtomicBoolean();
     private final AtomicInteger pendingConfirmations = new AtomicInteger();
     private volatile long nextItems;
@@ -266,6 +277,50 @@ public final class Engine {
         this.prices = new PriceService(config, index, sales, coflnet, clock);
         this.auctionFinder = new AuctionFlipFinder(config, prices);
         this.bazaarFinder = new BazaarFlipFinder(config);
+        this.market = new LiveMarket();
+        this.coflLists = new CoflLists(http, () -> config.urlCoflnet);
+        this.opportunities = new Opportunities(config, coflLists, market, clock);
+    }
+
+    /** Live prices for the extra features: our bazaar snapshot, item list and auction index. */
+    private final class LiveMarket implements Market {
+        @Override
+        public Config config() {
+            return config;
+        }
+
+        @Override
+        public BazaarProduct bazaar(String id) {
+            BazaarSnapshot snapshot = prices.bazaar();
+            return snapshot == null || id == null ? null : snapshot.get(id);
+        }
+
+        @Override
+        public String name(String id) {
+            return id == null ? "?" : items.displayName(id);
+        }
+
+        @Override
+        public String tier(String id) {
+            ItemCatalog.Info info = items.get(id);
+            return info == null ? null : info.tier;
+        }
+
+        @Override
+        public String bazaarSearch(String id) {
+            return items.bazaarSearch(id);
+        }
+
+        @Override
+        public boolean auctionsIndexed() {
+            return initialScanDone;
+        }
+
+        @Override
+        public long auctionPrice(String uuid) {
+            AuctionIndex.Listing listing = index.get(uuid);
+            return listing == null ? -1 : listing.price;
+        }
     }
 
     public synchronized void start() {
@@ -413,6 +468,12 @@ public final class Engine {
         now = clock.getAsLong();
         if (config.bzEnabled && now >= nextBazaarPoll) {
             background(bazaarJob, this::pollBazaar);
+        }
+        if (config.sourceCoflnet && !otherJob.get()) {
+            final OpportunityKind due = opportunities.due(now);
+            if (due != null) {
+                background(otherJob, () -> refreshOpportunities(due));
+            }
         }
         if (now >= nextSave) {
             nextSave = now + 5 * MINUTE;
@@ -987,6 +1048,40 @@ public final class Engine {
     }
 
     // ---- Notifications (any thread) ----
+
+    // ---- SkyCofl's lists (background) ----
+
+    private void refreshOpportunities(OpportunityKind kind) {
+        List<Opportunity> alerts;
+        try {
+            alerts = opportunities.refresh(kind);
+            status.ok("skycofl");
+        } catch (IOException e) {
+            status.error("skycofl", e);
+            opportunities.failed(kind, e);
+            return;
+        } catch (RuntimeException e) {
+            status.error("skycofl", e);
+            opportunities.failed(kind, e);
+            return;
+        }
+        for (Opportunity o : alerts) {
+            status.otherNotifications.incrementAndGet();
+            deliver(OpportunityText.line(o), clock.getAsLong(), null);
+        }
+        Map<OpportunityKind, Integer> summary = opportunities.startupSummary();
+        if (summary != null && (!config.onlyInSkyblock || platform.isInSkyblock())) {
+            platform.showMessage(OpportunityText.summary(summary));
+        }
+    }
+
+    public Opportunities opportunities() {
+        return opportunities;
+    }
+
+    public Market market() {
+        return market;
+    }
 
     private void deliver(Msg message, long now, AuctionFlip flip) {
         boolean auction = flip != null;
