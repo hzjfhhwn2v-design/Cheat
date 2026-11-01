@@ -38,7 +38,7 @@ jobs:
         run: |
           for jar in forge-1.8.9/build/libs/*.jar; do
             echo "== $jar"
-            unzip -l "$jar" | grep -E "dev/flipscout/(forge|core/FlipScout)|mcmod.info|certs/isrg"
+            unzip -l "$jar" | grep -E "dev/flipscout/(forge|core/FlipScout)|mcmod.info|flipscout_icon.png|certs/isrg"
             unzip -p "$jar" mcmod.info
           done
       - uses: actions/upload-artifact@v4
@@ -80,7 +80,7 @@ jobs:
         run: |
           for jar in ${{ matrix.dir }}/build/libs/flipscout-fabric-${{ matrix.minecraft }}-*.jar; do
             echo "== $jar"
-            unzip -l "$jar" | grep -E "dev/flipscout/(fabric|core/FlipScout)|fabric.mod.json|certs/isrg"
+            unzip -l "$jar" | grep -E "dev/flipscout/(fabric|core/FlipScout)|fabric.mod.json|assets/flipscout/icon.png|certs/isrg"
             unzip -p "$jar" fabric.mod.json
           done
       - uses: actions/upload-artifact@v4

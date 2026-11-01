@@ -11,7 +11,7 @@ import java.util.function.LongSupplier;
 
 /** Entry point used by the Forge and Fabric mods. */
 public final class FlipScout {
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
     public static final String MOD_ID = "flipscout";
 
     private final Config config = new Config();
