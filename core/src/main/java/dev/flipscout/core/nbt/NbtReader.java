@@ -33,7 +33,7 @@ public final class NbtReader {
             try {
                 raw = Base64.getMimeDecoder().decode(base64);
             } catch (IllegalArgumentException e2) {
-                throw new IOException("item_bytes non è base64 valido", e2);
+                throw new IOException("item_bytes is not valid base64", e2);
             }
         }
         InputStream in = new ByteArrayInputStream(raw);
@@ -51,7 +51,7 @@ public final class NbtReader {
     public static Map<String, Object> readRoot(DataInput in) throws IOException {
         int type = in.readByte();
         if (type != 10) {
-            throw new IOException("La radice NBT non è un compound (tipo " + type + ")");
+            throw new IOException("The NBT root is not a compound (type " + type + ")");
         }
         in.readUTF();
         return readCompound(in, 0);
@@ -59,7 +59,7 @@ public final class NbtReader {
 
     private static Map<String, Object> readCompound(DataInput in, int depth) throws IOException {
         if (depth > MAX_DEPTH) {
-            throw new IOException("NBT troppo annidato");
+            throw new IOException("NBT nested too deeply");
         }
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         while (true) {
@@ -98,12 +98,12 @@ public final class NbtReader {
                 int size = length(in);
                 if (elementType == 0) {
                     if (size > 0) {
-                        throw new IOException("Lista NBT senza tipo");
+                        throw new IOException("NBT list without a type");
                     }
                     return Collections.emptyList();
                 }
                 if (depth > MAX_DEPTH) {
-                    throw new IOException("NBT troppo annidato");
+                    throw new IOException("NBT nested too deeply");
                 }
                 List<Object> list = new ArrayList<Object>(Math.min(size, 1024));
                 for (int i = 0; i < size; i++) {
@@ -128,14 +128,14 @@ public final class NbtReader {
                 return longs;
             }
             default:
-                throw new IOException("Tipo NBT sconosciuto: " + type);
+                throw new IOException("Unknown NBT type: " + type);
         }
     }
 
     private static int length(DataInput in) throws IOException {
         int length = in.readInt();
         if (length < 0 || length > MAX_LENGTH) {
-            throw new IOException("Lunghezza NBT non valida: " + length);
+            throw new IOException("Invalid NBT length: " + length);
         }
         return length;
     }

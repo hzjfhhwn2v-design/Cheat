@@ -36,12 +36,23 @@ public final class FlipScout {
         Log.debugEnabled = config.debug;
         this.platform = platform;
         engine = new Engine(config, platform, http, dataDir, clock);
-        tracker = new ProfitTracker(config, new File(dataDir, "guadagni.json"), clock, platform, engine::runAsync);
+        tracker = new ProfitTracker(config, profitsFile(dataDir), clock, platform, engine::runAsync);
         tracker.load();
         discord = new Discord(config, http, platform, clock, engine::items, engine::notifiedPurchase);
         tracker.setListener(discord::onTrade);
         commands = new Commands(config, configFile, engine, tracker, discord, platform, clock);
         editor = new ConfigEditor(config, configFile);
+    }
+
+    /** profits.json. Versions up to 1.2.0 called it guadagni.json: that file is renamed once. */
+    static File profitsFile(File dataDir) {
+        File file = new File(dataDir, "profits.json");
+        File old = new File(dataDir, "guadagni.json");
+        if (!file.exists() && old.isFile() && !old.renameTo(file)) {
+            Log.warn("Could not rename " + old + " to " + file.getName() + ", using the old name");
+            return old;
+        }
+        return file;
     }
 
     /** For the settings screen. */

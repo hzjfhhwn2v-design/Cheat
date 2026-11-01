@@ -342,7 +342,7 @@ public final class Engine {
                 try {
                     job.run();
                 } catch (Throwable t) {
-                    Log.error("Errore inatteso in un lavoro in background", t);
+                    Log.error("Unexpected error in a background task", t);
                 } finally {
                     running.set(false);
                 }
@@ -364,7 +364,7 @@ public final class Engine {
         try {
             tick();
         } catch (Throwable t) {
-            Log.error("Errore inatteso nel ciclo principale", t);
+            Log.error("Unexpected error in the main loop", t);
         }
     }
 
@@ -454,10 +454,10 @@ public final class Engine {
                         s.fetched.add(decodeAll(hypixel.fetchAuctionPage(page, 0)));
                     } catch (IOException e) {
                         s.failed = true;
-                        Log.debug("Pagina " + page + " non scaricata: " + e);
+                        Log.debug("Page " + page + " not downloaded: " + e);
                     } catch (RuntimeException e) {
                         s.failed = true;
-                        Log.debug("Pagina " + page + " non leggibile: " + e);
+                        Log.debug("Page " + page + " unreadable: " + e);
                     } finally {
                         s.pending.decrementAndGet();
                     }
@@ -511,24 +511,24 @@ public final class Engine {
             nextPrefetch = end + PREFETCH_DELAY_MS;
         }
         if (complete && !s.mixed) {
-            status.ok("aste");
+            status.ok("auctions");
             auctionBackoff.reset();
             nextFullScan = end + config.ahFullScanMinutes * MINUTE;
         } else {
             if (complete) {
-                Log.debug("Le aste sono cambiate durante la scansione completa, la ripeto tra poco");
+                Log.debug("The auctions changed during the full scan, repeating it shortly");
             } else {
-                Log.warn("Scansione completa incompleta: " + s.mergedPages + "/" + s.pages + " pagine");
+                Log.warn("Incomplete full scan: " + s.mergedPages + "/" + s.pages + " pages");
             }
             nextFullScan = end + 2 * MINUTE;
         }
-        Log.debug("Scansione completa: " + s.auctions + " aste in " + s.pages + " pagine, " + index.size()
-            + " BIN indicizzate");
+        Log.debug("Full scan: " + s.auctions + " auctions in " + s.pages + " pages, " + index.size()
+            + " BINs indexed");
     }
 
     private void failAuctions(Exception e) {
-        status.error("aste", e);
-        Log.warn("Aste non disponibili: " + e);
+        status.error("auctions", e);
+        Log.warn("Auctions unavailable: " + e);
         nextFullScan = clock.getAsLong() + auctionBackoff.fail();
     }
 
@@ -557,16 +557,16 @@ public final class Engine {
                 merge(page, scanSeq, clock.getAsLong());
                 recent = countStartedSince(page, recentSince);
             }
-            status.ok("aste");
+            status.ok("auctions");
             auctionBackoff.reset();
             nextAuctionPoll = expectedNextUpdate(first.lastUpdated + publishDelay, first.serverDate, clock.getAsLong());
             // The minute's flips are out: say what the blacklist kept back.
             summarizeBlocked();
         } catch (IOException e) {
-            status.error("aste", e);
+            status.error("auctions", e);
             nextAuctionPoll = clock.getAsLong() + auctionBackoff.fail();
         } catch (RuntimeException e) {
-            status.error("aste", e);
+            status.error("auctions", e);
             nextAuctionPoll = clock.getAsLong() + auctionBackoff.fail();
         }
     }
@@ -788,14 +788,14 @@ public final class Engine {
                 sales.add(decoded.key.key, (int) (time / MINUTE), (double) ended.price / decoded.count);
             }
             markSold(page.auctions);
-            status.ok("vendite");
+            status.ok("sales");
             endedBackoff.reset();
             nextEndedPoll = expectedNextUpdate(page.lastUpdated + publishDelay, page.serverDate, clock.getAsLong());
         } catch (IOException e) {
-            status.error("vendite", e);
+            status.error("sales", e);
             nextEndedPoll = clock.getAsLong() + endedBackoff.fail();
         } catch (RuntimeException e) {
-            status.error("vendite", e);
+            status.error("sales", e);
             nextEndedPoll = clock.getAsLong() + endedBackoff.fail();
         }
     }
@@ -949,14 +949,14 @@ public final class Engine {
                 prices.setCatalog(catalog);
             }
             status.lastItems = now;
-            status.ok("oggetti");
+            status.ok("items");
             itemsBackoff.reset();
             nextItems = now + 6 * HOUR;
         } catch (IOException e) {
-            status.error("oggetti", e);
+            status.error("items", e);
             nextItems = clock.getAsLong() + itemsBackoff.fail();
         } catch (RuntimeException e) {
-            status.error("oggetti", e);
+            status.error("items", e);
             nextItems = clock.getAsLong() + itemsBackoff.fail();
         }
     }
@@ -968,11 +968,11 @@ public final class Engine {
             if (!names.isEmpty()) {
                 items = items.withNames(names);
             }
-            status.ok("nomi");
+            status.ok("names");
             namesBackoff.reset();
             nextNames = now + 24 * HOUR;
         } catch (IOException | RuntimeException e) {
-            status.error("nomi", e);
+            status.error("names", e);
             nextNames = clock.getAsLong() + Math.max(10 * MINUTE, namesBackoff.fail());
         }
     }
@@ -982,7 +982,7 @@ public final class Engine {
             sales.prune((int) (clock.getAsLong() / MINUTE), config.salesWindowDays);
             sales.save(salesFile);
         } catch (IOException e) {
-            Log.warn("Impossibile salvare le vendite", e);
+            Log.warn("Could not save the sales", e);
         }
     }
 
@@ -1001,7 +1001,7 @@ public final class Engine {
                 recent.removeLast();
             }
         }
-        Log.debug("Notifica: " + message.toPlainString());
+        Log.debug("Notification: " + message.toPlainString());
         if (config.onlyInSkyblock && !platform.isInSkyblock()) {
             return;
         }

@@ -12,7 +12,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/** Builds the chat messages (in Italian) for flips. */
+/** Builds the chat messages (in English) for flips. */
 final class Notifier {
     /** Lines of the blocked-flips hover: more would not fit on screen. */
     private static final int MAX_BLOCKED_LINES = 15;
@@ -32,12 +32,12 @@ final class Notifier {
             line.append(" §8| §7").append(Text.shortDuration(now - l.start));
         }
         if (flip.upgradeOnly) {
-            line.append(" §b+upgrade");
+            line.append(" §b+upgrades");
         }
         if (flip.weak) {
             line.append(" §c⚠");
         }
-        line.append(" §b§l[APRI]");
+        line.append(" §b§l[OPEN]");
         return new Msg().run(line.toString(), flip.command(), auctionHover(flip, now));
     }
 
@@ -47,33 +47,33 @@ final class Notifier {
         StringBuilder h = new StringBuilder();
         h.append(itemName(l)).append('\n');
         h.append("§8").append(l.key.key).append('\n');
-        h.append("§7Prezzo: §6").append(Coins.full(l.price));
+        h.append("§7Price: §6").append(Coins.full(l.price));
         if (l.count > 1) {
-            h.append(" §8(").append(Coins.compact(l.unitPrice)).append(" l'uno)");
+            h.append(" §8(").append(Coins.compact(l.unitPrice)).append(" each)");
         }
         h.append('\n');
-        h.append("§7Rivendita stimata: §a").append(Coins.full(flip.resale)).append('\n');
+        h.append("§7Estimated resale: §a").append(Coins.full(flip.resale)).append('\n');
         if (v.bazaar) {
-            h.append("§7  Vendita istantanea al bazaar: §f").append(Coins.unit(v.bazaarInstaSell)).append(" l'uno\n");
+            h.append("§7  Bazaar instant-sell: §f").append(Coins.unit(v.bazaarInstaSell)).append(" each\n");
         } else {
             if (!Double.isNaN(v.lbinOther)) {
-                h.append("§7  BIN più basso (altri): §f").append(Coins.compact(v.lbinOther))
-                    .append(" §8(").append(v.otherListings).append(" in vendita)\n");
+                h.append("§7  Lowest BIN (others): §f").append(Coins.compact(v.lbinOther))
+                    .append(" §8(").append(v.otherListings).append(" listed)\n");
             }
             if (!Double.isNaN(v.salesMedian)) {
-                h.append("§7  Mediana vendite recenti: §f").append(Coins.compact(v.salesMedian))
-                    .append(" §8(").append(v.salesSamples).append(" vendite)\n");
+                h.append("§7  Recent sales median: §f").append(Coins.compact(v.salesMedian))
+                    .append(" §8(").append(v.salesSamples).append(" sales)\n");
             }
             if (!Double.isNaN(v.coflMedian)) {
-                h.append("§7  Mediana Coflnet: §f").append(Coins.compact(v.coflMedian)).append('\n');
+                h.append("§7  Coflnet median: §f").append(Coins.compact(v.coflMedian)).append('\n');
             }
         }
         if (v.upgradeExtra < 0) {
-            h.append("§7Meno upgrade del BIN di riferimento: §c").append(Coins.compact(v.upgradeExtra))
-                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% della differenza)\n");
+            h.append("§7Fewer upgrades than the reference BIN: §c").append(Coins.compact(v.upgradeExtra))
+                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% of the difference)\n");
         } else if (v.upgradeExtra > 0) {
-            h.append("§7Upgrade contati: §b+").append(Coins.compact(v.upgradeExtra))
-                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% del loro valore)\n");
+            h.append("§7Upgrades counted: §b+").append(Coins.compact(v.upgradeExtra))
+                .append(" §8(").append(Coins.decimal(v.upgradeShare * 100, 0)).append("% of their value)\n");
         }
         if (v.upgradeExtra != 0) {
             int shown = 0;
@@ -85,27 +85,27 @@ final class Notifier {
                 h.append("§7  ").append(part.part.label()).append(": §f").append(Coins.compact(part.value)).append('\n');
             }
             if (v.referenceUpgrades > 0) {
-                h.append("§7  già nel BIN di riferimento: §c-").append(Coins.compact(v.referenceUpgrades)).append('\n');
+                h.append("§7  already in the reference BIN: §c-").append(Coins.compact(v.referenceUpgrades)).append('\n');
             }
         }
-        h.append("§7Tasse di vendita: §c-").append(Coins.compact(flip.fees)).append('\n');
-        h.append("§7Profitto: §2+").append(Coins.full(flip.profit))
+        h.append("§7Selling fees: §c-").append(Coins.compact(flip.fees)).append('\n');
+        h.append("§7Profit: §2+").append(Coins.full(flip.profit))
             .append(" §7(").append(Coins.decimal(flip.percent, 1)).append("%)\n");
-        h.append("§7Vendite al giorno: §f").append(Double.isNaN(v.volumePerDay) ? "?" : Coins.decimal(v.volumePerDay, 1));
+        h.append("§7Sales per day: §f").append(Double.isNaN(v.volumePerDay) ? "?" : Coins.decimal(v.volumePerDay, 1));
         if (v.volumeSource != null) {
             h.append(" §8(").append(v.volumeSource).append(')');
         }
         h.append('\n');
         if (l.start > 0) {
-            h.append("§7Messa in vendita: §f").append(Text.ago(now, l.start)).append('\n');
+            h.append("§7Listed: §f").append(Text.ago(now, l.start)).append('\n');
         }
         if (flip.weak) {
-            h.append("§cUn solo riferimento di prezzo: controlla prima di comprare\n");
+            h.append("§cOnly one price reference: double-check before buying\n");
         }
         if (flip.upgradeOnly) {
-            h.append("§bConviene solo contando gli upgrade: rivenderlo può richiedere più tempo\n");
+            h.append("§bOnly worth it counting upgrades: reselling may take longer\n");
         }
-        h.append("§eClicca per aprire l'asta");
+        h.append("§eClick to open the auction");
         return h.toString();
     }
 
@@ -115,50 +115,50 @@ final class Notifier {
         switch (flip.type) {
             case ORDER:
                 line.append("§dBZ flip §f").append(flip.name)
-                    .append(" §8» §7compra §e").append(Coins.unit(flip.buyOrderPrice))
-                    .append(" §7vendi §a").append(Coins.unit(flip.sellOfferPrice))
+                    .append(" §8» §7buy §e").append(Coins.unit(flip.buyOrderPrice))
+                    .append(" §7sell §a").append(Coins.unit(flip.sellOfferPrice))
                     .append(" §8| §2+").append(Coins.decimal(flip.marginPercent, 1)).append('%')
                     .append(" §8| §7~").append(Coins.compact(flip.profit)).append("/h");
                 hover = "§f" + flip.name + "\n"
-                    + "§7Buy order a §e" + Coins.unit(flip.buyOrderPrice)
-                    + " §8(vendita istantanea ora: " + Coins.unit(flip.instaSell) + ")\n"
-                    + "§7Sell offer a §a" + Coins.unit(flip.sellOfferPrice)
-                    + " §8(acquisto istantaneo ora: " + Coins.unit(flip.instaBuy) + ")\n"
-                    + "§7Margine per pezzo dopo la tassa: §2" + Coins.unit(flip.margin)
+                    + "§7Buy order at §e" + Coins.unit(flip.buyOrderPrice)
+                    + " §8(instant-sell now: " + Coins.unit(flip.instaSell) + ")\n"
+                    + "§7Sell offer at §a" + Coins.unit(flip.sellOfferPrice)
+                    + " §8(instant-buy now: " + Coins.unit(flip.instaBuy) + ")\n"
+                    + "§7Margin per item after tax: §2" + Coins.unit(flip.margin)
                     + " §7(" + Coins.decimal(flip.marginPercent, 1) + "%)\n"
-                    + "§7Volume: §f" + Coins.compact(flip.buysPerHour) + " §7acquisti/h, §f"
-                    + Coins.compact(flip.sellsPerHour) + " §7vendite/h\n"
-                    + "§7Potenziale: §2" + Coins.compact(flip.profit) + "/h §8(se prendi tutto il volume)\n"
-                    + "§eClicca per aprire il bazaar";
+                    + "§7Volume: §f" + Coins.compact(flip.buysPerHour) + " §7buys/h, §f"
+                    + Coins.compact(flip.sellsPerHour) + " §7sells/h\n"
+                    + "§7Potential: §2" + Coins.compact(flip.profit) + "/h §8(if you take the whole volume)\n"
+                    + "§eClick to open the bazaar";
                 break;
             case CRASH:
-                line.append("§dBZ crollo §f").append(flip.name)
-                    .append(" §8» §ecompra a ").append(Coins.unit(flip.instaBuy))
-                    .append(" §7(di solito ").append(Coins.unit(flip.baseline))
+                line.append("§dBZ crash §f").append(flip.name)
+                    .append(" §8» §ebuy at ").append(Coins.unit(flip.instaBuy))
+                    .append(" §7(usually ").append(Coins.unit(flip.baseline))
                     .append(", §c-").append(Coins.decimal(flip.dropPercent, 0)).append("%§7)")
                     .append(" §8| §2~+").append(Coins.compact(flip.profit));
                 hover = "§f" + flip.name + "\n"
-                    + "§7Prezzo di acquisto istantaneo: §e" + Coins.unit(flip.instaBuy) + "\n"
-                    + "§7Mediana dell'ultima ora e mezza: §a" + Coins.unit(flip.baseline) + "\n"
-                    + "§7Pezzi sotto quel prezzo: §f" + Coins.compact(flip.units)
-                    + " §7per §6" + Coins.compact(flip.cost) + "\n"
-                    + "§7Profitto se li rivendi al prezzo solito: §2+" + Coins.compact(flip.profit) + "\n"
-                    + "§8Il prezzo potrebbe non risalire: è una scommessa.\n"
-                    + "§eClicca per aprire il bazaar";
+                    + "§7Instant-buy price: §e" + Coins.unit(flip.instaBuy) + "\n"
+                    + "§7Median of the last 90 min: §a" + Coins.unit(flip.baseline) + "\n"
+                    + "§7Items below that price: §f" + Coins.compact(flip.units)
+                    + " §7for §6" + Coins.compact(flip.cost) + "\n"
+                    + "§7Profit reselling at the usual price: §2+" + Coins.compact(flip.profit) + "\n"
+                    + "§8The price may not recover: it's a gamble.\n"
+                    + "§eClick to open the bazaar";
                 break;
             default:
                 line.append("§dBZ→NPC §f").append(flip.name)
-                    .append(" §8» §ecompra ").append(Coins.unit(flip.instaBuy))
+                    .append(" §8» §ebuy ").append(Coins.unit(flip.instaBuy))
                     .append(" §7→ NPC §a").append(Coins.unit(flip.npcPrice))
                     .append(" §8| §2+").append(Coins.compact(flip.profit))
-                    .append(" §7(").append(Coins.compact(flip.units)).append(" pz)");
+                    .append(" §7(").append(Coins.compact(flip.units)).append(" pcs)");
                 hover = "§f" + flip.name + "\n"
-                    + "§7Compra istantaneamente sotto §a" + Coins.unit(flip.npcPrice)
-                    + " §7e vendi a un NPC\n"
-                    + "§7Pezzi disponibili: §f" + Coins.compact(flip.units)
-                    + " §7per §6" + Coins.compact(flip.cost) + "\n"
-                    + "§7Profitto: §2+" + Coins.compact(flip.profit) + "\n"
-                    + "§eClicca per aprire il bazaar";
+                    + "§7Instant-buy below §a" + Coins.unit(flip.npcPrice)
+                    + " §7and sell to an NPC\n"
+                    + "§7Items available: §f" + Coins.compact(flip.units)
+                    + " §7for §6" + Coins.compact(flip.cost) + "\n"
+                    + "§7Profit: §2+" + Coins.compact(flip.profit) + "\n"
+                    + "§eClick to open the bazaar";
                 break;
         }
         line.append(" §b§l[BAZAAR]");
@@ -177,17 +177,17 @@ final class Notifier {
                 return Double.compare(b.profit, a.profit);
             }
         });
-        StringBuilder h = new StringBuilder("§6Flip nascosti dalla blacklist\n");
+        StringBuilder h = new StringBuilder("§6Flips hidden by the blacklist\n");
         for (int i = 0; i < sorted.size(); i++) {
             if (i == MAX_BLOCKED_LINES) {
-                h.append("§8... e altri ").append(sorted.size() - i).append('\n');
+                h.append("§8+").append(sorted.size() - i).append(" more\n");
                 break;
             }
             h.append("§7• ").append(sorted.get(i).line).append('\n');
         }
-        h.append("§eClicca per vedere la blacklist");
+        h.append("§eClick to see the blacklist");
         int n = sorted.size();
-        return new Msg().run(Msg.PREFIX + "§7I tuoi filtri hanno bloccato §e" + n + " §7flip §8(passa il mouse per vederli)",
+        return new Msg().run(Msg.PREFIX + "§7Your filters blocked §e" + n + " §7flips §8(hover to see them)",
             "/flipscout blacklist list", h.toString());
     }
 
@@ -207,7 +207,7 @@ final class Notifier {
                     + Coins.compact(flip.profit) + "/h";
                 break;
             case CRASH:
-                what = "§dBZ crollo §f" + flip.name + " §2~+" + Coins.compact(flip.profit);
+                what = "§dBZ crash §f" + flip.name + " §2~+" + Coins.compact(flip.profit);
                 break;
             default:
                 what = "§dBZ→NPC §f" + flip.name + " §2+" + Coins.compact(flip.profit);
@@ -226,6 +226,6 @@ final class Notifier {
     }
 
     private static String volume(double perDay) {
-        return Double.isNaN(perDay) ? "vol ?" : "vol " + Coins.decimal(perDay, perDay < 10 ? 1 : 0) + "/g";
+        return Double.isNaN(perDay) ? "vol ?" : "vol " + Coins.decimal(perDay, perDay < 10 ? 1 : 0) + "/d";
     }
 }

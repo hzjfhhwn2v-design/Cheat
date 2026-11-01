@@ -55,9 +55,9 @@ public class FlipScoutForge {
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         ClientCommandHandler.instance.registerCommand(new FlipScoutCommand(flipScout));
-        openKey = new KeyBinding("Apri l'ultima notifica", Keyboard.KEY_NONE, "FlipScout");
+        openKey = new KeyBinding("Open the latest notification", Keyboard.KEY_NONE, "FlipScout");
         ClientRegistry.registerKeyBinding(openKey);
-        settingsKey = new KeyBinding("Apri le impostazioni", Keyboard.KEY_NONE, "FlipScout");
+        settingsKey = new KeyBinding("Open the settings", Keyboard.KEY_NONE, "FlipScout");
         ClientRegistry.registerKeyBinding(settingsKey);
         MinecraftForge.EVENT_BUS.register(this);
         flipScout.start();

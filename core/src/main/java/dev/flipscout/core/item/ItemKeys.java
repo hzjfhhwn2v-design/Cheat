@@ -94,10 +94,10 @@ public final class ItemKeys {
         try {
             return decode(itemBytes, itemName);
         } catch (IOException e) {
-            Log.debug("item_bytes illeggibile per " + itemName + ": " + e.getMessage());
+            Log.debug("unreadable item_bytes for " + itemName + ": " + e.getMessage());
             return null;
         } catch (RuntimeException e) {
-            Log.debug("item_bytes illeggibile per " + itemName + ": " + e);
+            Log.debug("unreadable item_bytes for " + itemName + ": " + e);
             return null;
         }
     }

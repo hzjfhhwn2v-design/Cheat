@@ -88,7 +88,7 @@ public final class SslSupport {
             context.init(null, new TrustManager[] {combined}, null);
             return context.getSocketFactory();
         } catch (Exception e) {
-            Log.warn("Impossibile preparare i certificati aggiuntivi, uso quelli di Java", e);
+            Log.warn("Could not prepare the extra certificates, using the Java ones", e);
             return null;
         }
     }

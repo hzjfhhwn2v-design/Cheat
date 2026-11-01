@@ -91,7 +91,7 @@ public final class HypixelApi {
             }
             in.endObject();
             if (!success) {
-                throw new ApiException("Hypixel: " + (cause != null ? cause : "risposta non valida"), response.status, 0);
+                throw new ApiException("Hypixel: " + (cause != null ? cause : "invalid response"), response.status, 0);
             }
             return result;
         } finally {
@@ -198,7 +198,7 @@ public final class HypixelApi {
             }
             in.endObject();
             if (!success) {
-                throw new ApiException("Hypixel: " + (cause != null ? cause : "risposta non valida"), response.status, 0);
+                throw new ApiException("Hypixel: " + (cause != null ? cause : "invalid response"), response.status, 0);
             }
             return result;
         } finally {
@@ -326,7 +326,7 @@ public final class HypixelApi {
             }
             in.endObject();
             if (!success) {
-                throw new ApiException("Hypixel: " + (cause != null ? cause : "risposta non valida"), response.status, 0);
+                throw new ApiException("Hypixel: " + (cause != null ? cause : "invalid response"), response.status, 0);
             }
             return new BazaarSnapshot(lastUpdated, products);
         } finally {
@@ -509,7 +509,7 @@ public final class HypixelApi {
         HttpFetcher.Response response = http.get(stripSlash(base) + path);
         if (response.status >= 400) {
             response.close();
-            String reason = response.status == 429 ? "troppe richieste" : "HTTP " + response.status;
+            String reason = response.status == 429 ? "too many requests" : "HTTP " + response.status;
             throw new ApiException("Hypixel: " + reason, response.status, response.retryAfterMs);
         }
         return response;

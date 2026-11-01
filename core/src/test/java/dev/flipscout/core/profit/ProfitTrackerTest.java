@@ -31,7 +31,7 @@ class ProfitTrackerTest {
     }
 
     private ProfitTracker newTracker() {
-        ProfitTracker t = new ProfitTracker(config, new File(dir, "guadagni.json"), clock::get, platform, Runnable::run);
+        ProfitTracker t = new ProfitTracker(config, new File(dir, "profits.json"), clock::get, platform, Runnable::run);
         t.load();
         return t;
     }
@@ -112,8 +112,8 @@ class ProfitTrackerTest {
         assertTrue(tracker.unclaimed().isEmpty());
         assertEquals(3_600_000L, tracker.flips().get(0).soldAt - tracker.flips().get(0).boughtAt);
         String text = platform.allText();
-        assertTrue(text.contains("Acquisto registrato: Hyperion per 800M"), text);
-        assertTrue(text.contains("Flip chiuso: Hyperion 800M → 869M +68.5M | sessione +68.5M"), text);
+        assertTrue(text.contains("Purchase recorded: Hyperion for 800M"), text);
+        assertTrue(text.contains("Flip closed: Hyperion 800M → 869M +68.5M | session +68.5M"), text);
     }
 
     @Test
@@ -137,7 +137,7 @@ class ProfitTrackerTest {
         assertEquals(60, tracker.total().profit, 1e-6);
         assertEquals(2, tracker.total().flips);
         assertTrue(tracker.lots().isEmpty());
-        assertFalse(platform.allText().contains("Acquisto registrato"), platform.allText());
+        assertFalse(platform.allText().contains("Purchase recorded"), platform.allText());
     }
 
     @Test
@@ -178,7 +178,7 @@ class ProfitTrackerTest {
         assertEquals(0, tracker.session().stats.profit, 1e-9);
         assertEquals(1, tracker.session().stats.bought);
         assertTrue(tracker.session().paused);
-        assertTrue(platform.allText().contains("sessione in pausa"), platform.allText());
+        assertTrue(platform.allText().contains("session paused"), platform.allText());
 
         assertTrue(tracker.resumeSession());
         chat("[Bazaar] Bought 1x Enchanted Diamond for 160 coins!");

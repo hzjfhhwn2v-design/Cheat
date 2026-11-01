@@ -89,7 +89,7 @@ final class Discord {
     void test() {
         String webhook = config.discordWebhook;
         if (webhook.isEmpty()) {
-            platform.showMessage(Msg.prefixed("§cNessun webhook impostato: §7incollalo in §e/flipscout gui §7→ Discord."));
+            platform.showMessage(Msg.prefixed("§cNo webhook set: §7paste it in §e/flipscout gui §7→ Discord."));
             return;
         }
         send(webhook, testMessage(), true);
@@ -117,7 +117,7 @@ final class Discord {
         try {
             sender.execute(() -> deliver(webhook, json.getBytes(StandardCharsets.UTF_8), test));
         } catch (RejectedExecutionException e) {
-            lastError = "troppi messaggi in coda, alcuni sono andati persi";
+            lastError = "too many messages in the queue, some were lost";
         }
     }
 
@@ -132,7 +132,7 @@ final class Discord {
                 if (attempt < MAX_ATTEMPTS && pause(2_000L * attempt)) {
                     continue;
                 }
-                fail(webhook, "Discord non raggiungibile (" + e.getMessage() + ")", test, false);
+                fail(webhook, "Discord unreachable (" + e.getMessage() + ")", test, false);
                 return;
             }
             if (status >= 200 && status < 300) {
@@ -140,7 +140,7 @@ final class Discord {
                 lastError = null;
                 reportedBroken = null;
                 if (test) {
-                    platform.showMessage(Msg.prefixed("§aMessaggio di prova inviato: §7controlla il canale su Discord."));
+                    platform.showMessage(Msg.prefixed("§aTest message sent: §7check the channel on Discord."));
                 }
                 return;
             }
@@ -181,14 +181,14 @@ final class Discord {
     private static String explain(int status) {
         switch (status) {
             case 404:
-                return "il webhook non esiste (cancellato, o indirizzo sbagliato)";
+                return "the webhook does not exist (deleted, or a wrong address)";
             case 401:
             case 403:
-                return "il webhook non è valido";
+                return "the webhook is not valid";
             case 429:
-                return "troppi messaggi, Discord ha chiesto di rallentare";
+                return "too many messages, Discord asked to slow down";
             default:
-                return "Discord ha risposto HTTP " + status;
+                return "Discord answered HTTP " + status;
         }
     }
 
@@ -197,7 +197,7 @@ final class Discord {
         Log.warn("Discord: " + why);
         if (test || (broken && !webhook.equals(reportedBroken))) {
             reportedBroken = webhook;
-            platform.showMessage(Msg.prefixed("§cDiscord: " + why + ". §7Controlla il webhook in §e/flipscout gui §7→ Discord."));
+            platform.showMessage(Msg.prefixed("§cDiscord: " + why + ". §7Check the webhook in §e/flipscout gui §7→ Discord."));
         }
     }
 
@@ -209,67 +209,67 @@ final class Discord {
         String what = e.amount > 1 ? e.amount + "x " + e.item : e.item;
         switch (e.kind) {
             case AUCTION_BOUGHT:
-                embed.title = "🛒 Hai comprato " + what + " per " + Coins.compact(e.coins);
+                embed.title = "🛒 You bought " + what + " for " + Coins.compact(e.coins);
                 embed.color = BLUE;
-                embed.field("Prezzo", coins(e.coins));
+                embed.field("Price", coins(e.coins));
                 if (flip != null) {
-                    embed.field("Rivendita stimata", coins(flip.resale));
-                    embed.field("Profitto previsto", signed(flip.profit) + percent(flip.profit, e.coins));
+                    embed.field("Estimated resale", coins(flip.resale));
+                    embed.field("Expected profit", signed(flip.profit) + percent(flip.profit, e.coins));
                 }
                 break;
             case AUCTION_SOLD:
-                embed.title = "💰 Hai venduto " + what + " per " + Coins.compact(e.coins)
+                embed.title = "💰 You sold " + what + " for " + Coins.compact(e.coins)
                     + (e.flip != null ? " (" + signed(e.flip.profit) + ")" : "");
                 if (e.player != null && !e.player.isEmpty()) {
-                    embed.description = "Comprato da **" + escape(e.player) + "**" + (e.whileAway ? " mentre non c'eri" : "");
+                    embed.description = "Bought by **" + escape(e.player) + "**" + (e.whileAway ? " while you were away" : "");
                 }
                 embed.color = e.flip == null ? GOLD : e.flip.profit >= 0 ? GREEN : RED;
-                embed.field("Prezzo", coins(e.coins));
-                embed.field("Incasso dopo le tasse", coins(e.net));
+                embed.field("Price", coins(e.coins));
+                embed.field("Revenue after taxes", coins(e.net));
                 flipFields(embed, e.flip);
                 break;
             case BAZAAR_BOUGHT:
-                embed.title = "🛒 Bazaar: hai comprato " + e.amount + "x " + e.item + " per " + Coins.compact(e.coins);
+                embed.title = "🛒 Bazaar: you bought " + e.amount + "x " + e.item + " for " + Coins.compact(e.coins);
                 embed.color = PURPLE;
-                embed.field("Spesa", coins(e.coins));
-                embed.field("Prezzo unitario", Coins.unit(e.coins / e.amount));
+                embed.field("Spent", coins(e.coins));
+                embed.field("Unit price", Coins.unit(e.coins / e.amount));
                 break;
             default:
-                embed.title = "💰 Bazaar: hai venduto " + e.amount + "x " + e.item + " per " + Coins.compact(e.net)
+                embed.title = "💰 Bazaar: you sold " + e.amount + "x " + e.item + " for " + Coins.compact(e.net)
                     + (e.flip != null ? " (" + signed(e.flip.profit) + ")" : "");
                 embed.color = e.flip == null ? GOLD : e.flip.profit >= 0 ? GREEN : RED;
-                embed.field("Incasso dopo le tasse", coins(e.net));
-                embed.field("Prezzo unitario", Coins.unit(e.net / e.amount));
+                embed.field("Revenue after taxes", coins(e.net));
+                embed.field("Unit price", Coins.unit(e.net / e.amount));
                 flipFields(embed, e.flip);
                 break;
         }
         embed.icon = icon(e.item);
-        embed.footer = "FlipScout · sessione " + signed(e.sessionProfit) + (e.sessionPaused ? " (in pausa)" : "")
-            + " · oggi " + signed(e.todayProfit);
+        embed.footer = "FlipScout · session " + signed(e.sessionProfit) + (e.sessionPaused ? " (paused)" : "")
+            + " · today " + signed(e.todayProfit);
         embed.time = e.time;
         return embed.toJson(platform.playerName(), platform.playerUuid());
     }
 
     private static void flipFields(Embed embed, ProfitTracker.Flip flip) {
         if (flip == null) {
-            embed.field("Profitto", "non calcolato: il mod non ha visto l'acquisto", false);
+            embed.field("Profit", "not calculated: the mod did not see the purchase", false);
             return;
         }
-        embed.field("Pagato", coins(flip.cost));
-        embed.field("Profitto", "**" + signed(flip.profit) + "**" + percent(flip.profit, flip.cost));
+        embed.field("Paid", coins(flip.cost));
+        embed.field("Profit", "**" + signed(flip.profit) + "**" + percent(flip.profit, flip.cost));
         if (flip.boughtAt > 0) {
-            embed.field("Tenuto per", Text.duration(flip.soldAt - flip.boughtAt));
+            embed.field("Held for", Text.duration(flip.soldAt - flip.boughtAt));
         }
     }
 
     String testMessage() {
         Embed embed = new Embed();
-        embed.title = "✅ FlipScout è collegato";
-        embed.description = "Da qui in poi arrivano in questo canale i resoconti di acquisti e vendite.";
+        embed.title = "✅ FlipScout is connected";
+        embed.description = "From now on, reports of your purchases and sales arrive in this channel.";
         embed.color = GREEN;
-        embed.field("Aste", config.discordAuctions ? "sì" : "no");
-        embed.field("Bazaar", config.discordBazaar ? "sì" : "no");
-        embed.field("Importo minimo", config.discordMinCoins > 0 ? Coins.compact(config.discordMinCoins) : "nessuno");
+        embed.field("Auctions", config.discordAuctions ? "yes" : "no");
+        embed.field("Bazaar", config.discordBazaar ? "yes" : "no");
+        embed.field("Minimum amount", config.discordMinCoins > 0 ? Coins.compact(config.discordMinCoins) : "none");
         embed.footer = "FlipScout " + FlipScout.VERSION;
         embed.time = clock.getAsLong();
         return embed.toJson(platform.playerName(), platform.playerUuid());

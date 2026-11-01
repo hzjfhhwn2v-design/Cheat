@@ -103,7 +103,7 @@ public final class Text {
         return sb.toString();
     }
 
-    /** "12 s", "4 min", "3.5 h", "2 g" for a duration in milliseconds. */
+    /** "12 s", "4 min", "3.5 h", "2 d" for a duration in milliseconds. */
     public static String duration(long ms) {
         if (ms < 0) {
             ms = 0;
@@ -120,7 +120,7 @@ public final class Text {
         if (hours < 48) {
             return Coins.decimal(hours, 1) + " h";
         }
-        return Coins.decimal(hours / 24.0, 1) + " g";
+        return Coins.decimal(hours / 24.0, 1) + " d";
     }
 
     /** Compact age for chat lines: "12s", "4m", "3h". */
@@ -135,8 +135,8 @@ public final class Text {
         return (s / 3600) + "h";
     }
 
-    /** Time since {@code timestamp}, or "mai" (never) when it is 0. */
+    /** Time since {@code timestamp}, or "never" when it is 0. */
     public static String ago(long now, long timestamp) {
-        return timestamp <= 0 ? "mai" : duration(now - timestamp) + " fa";
+        return timestamp <= 0 ? "never" : duration(now - timestamp) + " ago";
     }
 }

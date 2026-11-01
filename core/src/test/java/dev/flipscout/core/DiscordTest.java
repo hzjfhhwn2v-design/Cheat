@@ -42,7 +42,7 @@ class DiscordTest {
         items.put("HYPERION", new ItemCatalog.Info("HYPERION", "Hyperion", "LEGENDARY", 0));
         ItemCatalog catalog = new ItemCatalog(items);
         discord = new Discord(config, http, platform, clock::get, () -> catalog, (name, price) -> notified.get());
-        tracker = new ProfitTracker(config, new File(dir, "guadagni.json"), clock::get, platform, Runnable::run);
+        tracker = new ProfitTracker(config, new File(dir, "profits.json"), clock::get, platform, Runnable::run);
         tracker.setListener(discord::onTrade);
     }
 
@@ -79,25 +79,25 @@ class DiscordTest {
         assertEquals(WEBHOOK, posts.get(0)[0]);
 
         Map<String, Object> bought = embed(posts.get(0)[1]);
-        assertEquals("🛒 Hai comprato Hyperion per 800M", bought.get("title"));
+        assertEquals("🛒 You bought Hyperion for 800M", bought.get("title"));
         assertEquals("baldih", JsonTree.obj(bought.get("author")).get("name"));
         assertEquals("https://mc-heads.net/avatar/0123abcd/64", JsonTree.obj(bought.get("author")).get("icon_url"));
         assertEquals("https://sky.coflnet.com/static/icon/HYPERION", JsonTree.obj(bought.get("thumbnail")).get("url"));
         String boughtFields = fields(bought);
-        assertTrue(boughtFields.contains("Prezzo=**800M** (800,000,000)"), boughtFields);
-        assertTrue(boughtFields.contains("Rivendita stimata=**900M**"), boughtFields);
-        assertTrue(boughtFields.contains("Profitto previsto=+77.5M (9.7%)"), boughtFields);
+        assertTrue(boughtFields.contains("Price=**800M** (800,000,000)"), boughtFields);
+        assertTrue(boughtFields.contains("Estimated resale=**900M**"), boughtFields);
+        assertTrue(boughtFields.contains("Expected profit=+77.5M (9.7%)"), boughtFields);
 
         Map<String, Object> sold = embed(posts.get(1)[1]);
-        assertEquals("💰 Hai venduto Hyperion per 900M (+68.5M)", sold.get("title"));
+        assertEquals("💰 You sold Hyperion for 900M (+68.5M)", sold.get("title"));
         // Underscores in names would turn into italics on Discord.
-        assertEquals("Comprato da **Bob\\_1**", sold.get("description"));
+        assertEquals("Bought by **Bob\\_1**", sold.get("description"));
         assertEquals(0x2ECC71, ((Number) sold.get("color")).intValue());
         String soldFields = fields(sold);
-        assertTrue(soldFields.contains("Incasso dopo le tasse=**869M** (868,500,000)"), soldFields);
-        assertTrue(soldFields.contains("Profitto=**+68.5M** (8.6%)"), soldFields);
-        assertTrue(soldFields.contains("Tenuto per=2 h"), soldFields);
-        assertTrue(String.valueOf(JsonTree.obj(sold.get("footer")).get("text")).contains("sessione +68.5M"));
+        assertTrue(soldFields.contains("Revenue after taxes=**869M** (868,500,000)"), soldFields);
+        assertTrue(soldFields.contains("Profit=**+68.5M** (8.6%)"), soldFields);
+        assertTrue(soldFields.contains("Held for=2 h"), soldFields);
+        assertTrue(String.valueOf(JsonTree.obj(sold.get("footer")).get("text")).contains("session +68.5M"));
         assertTrue(String.valueOf(sold.get("timestamp")).startsWith("2027-"));
         assertTrue(platform.messages.stream().noneMatch(m -> m.toPlainString().contains("Discord")));
     }
@@ -121,7 +121,7 @@ class DiscordTest {
         tracker.onChat("[Bazaar] Sold 64x Enchanted Diamond for 11,000 coins!");
         List<String[]> posts = sent();
         assertEquals(1, posts.size());
-        assertTrue(posts.get(0)[1].contains("Bazaar: hai venduto 64x Enchanted Diamond per 11k"), posts.get(0)[1]);
+        assertTrue(posts.get(0)[1].contains("Bazaar: you sold 64x Enchanted Diamond for 11k"), posts.get(0)[1]);
     }
 
     @Test
@@ -140,9 +140,9 @@ class DiscordTest {
         tracker.onChat("You purchased Hyperion for 800,000,000 coins!");
         tracker.onChat("You purchased Hyperion for 810,000,000 coins!");
         assertEquals(2, sent().size());
-        long reports = platform.messages.stream().filter(m -> m.toPlainString().contains("il webhook non esiste")).count();
+        long reports = platform.messages.stream().filter(m -> m.toPlainString().contains("the webhook does not exist")).count();
         assertEquals(1, reports);
-        assertTrue(discord.lastError().contains("non esiste"));
+        assertTrue(discord.lastError().contains("does not exist"));
     }
 
     @Test
@@ -150,8 +150,8 @@ class DiscordTest {
         discord.test();
         List<String[]> posts = sent();
         assertEquals(1, posts.size());
-        assertEquals("✅ FlipScout è collegato", embed(posts.get(0)[1]).get("title"));
-        assertTrue(platform.allText().contains("Messaggio di prova inviato"));
+        assertEquals("✅ FlipScout is connected", embed(posts.get(0)[1]).get("title"));
+        assertTrue(platform.allText().contains("Test message sent"));
     }
 
     @Test
@@ -159,7 +159,7 @@ class DiscordTest {
         config.discordWebhook = "";
         discord.test();
         assertTrue(sent().isEmpty());
-        assertTrue(platform.allText().contains("Nessun webhook impostato"));
+        assertTrue(platform.allText().contains("No webhook set"));
     }
 
     @Test

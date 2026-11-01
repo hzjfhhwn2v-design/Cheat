@@ -120,11 +120,11 @@ public final class ConfigEditor {
         lines.add("§f" + setting.label);
         lines.add("§7" + setting.help);
         if (!setting.hint().isEmpty()) {
-            lines.add("§8Valori: " + setting.hint());
+            lines.add("§8Values: " + setting.hint());
         }
         String byDefault = text(setting, defaults);
-        lines.add("§8Predefinito: " + (byDefault.isEmpty() ? "(vuoto)" : byDefault));
-        lines.add("§8Chiave: " + setting.key);
+        lines.add("§8Default: " + (byDefault.isEmpty() ? "(empty)" : byDefault));
+        lines.add("§8Key: " + setting.key);
         return lines;
     }
 

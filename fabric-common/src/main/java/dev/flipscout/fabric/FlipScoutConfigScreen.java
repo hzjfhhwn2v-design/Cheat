@@ -33,7 +33,7 @@ final class FlipScoutConfigScreen extends Screen {
     private StringWidget problem;
 
     FlipScoutConfigScreen(ConfigEditor editor) {
-        super(Component.literal("FlipScout - Impostazioni"));
+        super(Component.literal("FlipScout - Settings"));
         this.editor = editor;
         this.section = editor.sections().get(0);
     }
@@ -42,13 +42,13 @@ final class FlipScoutConfigScreen extends Screen {
     protected void init() {
         int listLeft = 10 + SIDEBAR + 10;
         int listRight = width - 10;
-        Component heading = Component.literal("§6§lFlipScout §7- Impostazioni");
+        Component heading = Component.literal("§6§lFlipScout §7- Settings");
         addRenderableWidget(new StringWidget((width - font.width(heading)) / 2, 8, font.width(heading), 10, heading, font));
 
-        search = new EditBox(font, listLeft, 22, listRight - listLeft, 16, Component.literal("Cerca"));
+        search = new EditBox(font, listLeft, 22, listRight - listLeft, 16, Component.literal("Search"));
         search.setMaxLength(40);
         search.setValue(query);
-        search.setHint(Component.literal("§8Cerca un'impostazione..."));
+        search.setHint(Component.literal("§8Search a setting..."));
         search.setResponder(value -> {
             if (!value.equals(query)) {
                 query = value;
@@ -79,7 +79,7 @@ final class FlipScoutConfigScreen extends Screen {
             addRow(settings.get(i), TOP + (i - page * perPage) * ROW, listLeft, listRight, searching);
         }
         if (settings.isEmpty()) {
-            Component none = Component.literal("§7Nessuna impostazione trovata");
+            Component none = Component.literal("§7No settings found");
             addRenderableWidget(new StringWidget((listLeft + listRight - font.width(none)) / 2, TOP + 10, font.width(none), 10,
                 none, font));
         }
@@ -92,10 +92,10 @@ final class FlipScoutConfigScreen extends Screen {
             .bounds(middle + 50, bottom, 20, 20).build());
         prev.active = page > 0;
         next.active = page < pages - 1;
-        Component pageText = Component.literal("§7Pagina " + (page + 1) + "/" + pages);
+        Component pageText = Component.literal("§7Page " + (page + 1) + "/" + pages);
         addRenderableWidget(new StringWidget(middle - font.width(pageText) / 2, bottom + 6, font.width(pageText), 10,
             pageText, font));
-        addRenderableWidget(Button.builder(Component.literal("Fatto"), b -> onClose())
+        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
             .bounds(10, bottom, SIDEBAR, 20).build());
         problem = addRenderableWidget(new StringWidget(10, height - BOTTOM + 1, width - 20, 10, Component.empty(), font));
     }
@@ -106,7 +106,7 @@ final class FlipScoutConfigScreen extends Screen {
         Button reset = Button.builder(Component.literal("↺"), b -> {
             editor.reset(setting);
             rebuild(false);
-        }).bounds(listRight - 20, y, 20, 20).tooltip(Tooltip.create(Component.literal("Torna al valore predefinito")))
+        }).bounds(listRight - 20, y, 20, 20).tooltip(Tooltip.create(Component.literal("Reset to default")))
             .build();
         reset.visible = !editor.isDefault(setting);
         int controlLeft;

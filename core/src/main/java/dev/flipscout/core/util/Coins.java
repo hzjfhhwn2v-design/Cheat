@@ -82,11 +82,11 @@ public final class Coins {
      */
     public static long parse(String text) {
         if (text == null) {
-            throw new NumberFormatException("valore vuoto");
+            throw new NumberFormatException("empty value");
         }
         String s = text.trim().toLowerCase(Locale.ROOT).replace("_", "").replace(" ", "");
         if (s.isEmpty()) {
-            throw new NumberFormatException("valore vuoto");
+            throw new NumberFormatException("empty value");
         }
         char last = s.charAt(s.length() - 1);
         double multiplier = 1;
@@ -99,11 +99,11 @@ public final class Coins {
             s = s.replace(',', '.');
         }
         if (!NUMBER.matcher(s).matches()) {
-            throw new NumberFormatException("importo non valido: " + text);
+            throw new NumberFormatException("invalid amount: " + text);
         }
         double value = Double.parseDouble(s) * multiplier;
         if (value > 1e15) {
-            throw new NumberFormatException("importo troppo grande: " + text);
+            throw new NumberFormatException("amount too large: " + text);
         }
         return Math.round(value);
     }
@@ -111,11 +111,11 @@ public final class Coins {
     /** Parses a decimal such as "5", "5.5", "5,5" or "5%". */
     public static double parseDecimal(String text) {
         if (text == null) {
-            throw new NumberFormatException("valore vuoto");
+            throw new NumberFormatException("empty value");
         }
         String s = text.trim().replace("%", "").replace(',', '.');
         if (!NUMBER.matcher(s).matches()) {
-            throw new NumberFormatException("numero non valido: " + text);
+            throw new NumberFormatException("invalid number: " + text);
         }
         return Double.parseDouble(s);
     }

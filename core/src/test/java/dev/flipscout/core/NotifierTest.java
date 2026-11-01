@@ -28,9 +28,9 @@ class NotifierTest {
         AuctionFlip flip = new AuctionFlip(listing, v, 906_400_000, 31_700_000, 24_700_000, 2.9, false, true);
         Msg msg = new Notifier().auction(flip, 0);
         String line = msg.toPlainString();
-        assertTrue(line.contains("+upgrade"), line);
+        assertTrue(line.contains("+upgrades"), line);
         String hover = msg.parts().get(0).hover;
-        assertTrue(hover.contains("Upgrade contati: §b+6.4M §8(80% del loro valore)"), hover);
+        assertTrue(hover.contains("Upgrades counted: §b+6.4M §8(80% of their value)"), hover);
         assertTrue(hover.contains("Recombobulator 3000: §f8M"), hover);
     }
 }

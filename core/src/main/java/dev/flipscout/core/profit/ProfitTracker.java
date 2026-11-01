@@ -312,7 +312,7 @@ public final class ProfitTracker {
             try {
                 l.accept(recorded);
             } catch (RuntimeException e) {
-                Log.warn("Errore nel resoconto di uno scambio", e);
+                Log.warn("Error while reporting a trade", e);
             }
         }
         async.accept(this::save);
@@ -324,7 +324,7 @@ public final class ProfitTracker {
             case AUCTION_BOUGHT:
                 buy(t, now);
                 report(Event.Kind.AUCTION_BOUGHT, t, t.coins, false, null, now);
-                return Msg.prefixed("§7Acquisto registrato: §f" + t.item + " §7per §6" + Coins.compact(t.coins));
+                return Msg.prefixed("§7Purchase recorded: §f" + t.item + " §7for §6" + Coins.compact(t.coins));
             case BAZAAR_BOUGHT:
                 buy(t, now);
                 report(Event.Kind.BAZAAR_BOUGHT, t, t.coins, false, null, now);
@@ -445,16 +445,16 @@ public final class ProfitTracker {
             }
         });
         if (matched == 0) {
-            return auction ? Msg.prefixed("§7Vendita di §f" + item
-                + " §7registrata, ma non ho visto l'acquisto: non conta nel profitto.") : null;
+            return auction ? Msg.prefixed("§7Sale of §f" + item
+                + " §7recorded, but the purchase was not seen: it does not count towards the profit.") : null;
         }
         lastSale = new Flip(item, matched, cost, revenue, profit, boughtAt, now);
         flips.addFirst(lastSale);
         while (flips.size() > MAX_FLIPS) {
             flips.removeLast();
         }
-        String note = sessionRunningSince > 0 ? " §8| sessione " + signed(session.profit) : " §8| sessione in pausa";
-        return Msg.prefixed("§7Flip chiuso: §f" + item + (matched > 1 ? " §7x" + matched : "") + " §7"
+        String note = sessionRunningSince > 0 ? " §8| session " + signed(session.profit) : " §8| session paused";
+        return Msg.prefixed("§7Flip closed: §f" + item + (matched > 1 ? " §7x" + matched : "") + " §7"
             + Coins.compact(cost) + " → " + Coins.compact(revenue) + " " + signed(profit) + note);
     }
 
@@ -749,7 +749,7 @@ public final class ProfitTracker {
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                Log.warn("File dei guadagni illeggibile, riparto da zero: " + file, e);
+                Log.warn("Unreadable profits file, starting over: " + file, e);
                 since = now;
                 total = new Stats();
                 days.clear();
@@ -783,7 +783,7 @@ public final class ProfitTracker {
                 synchronized (this) {
                     dirty = true;
                 }
-                Log.warn("Impossibile salvare " + file, e);
+                Log.warn("Could not save " + file, e);
             }
         }
     }
@@ -915,7 +915,7 @@ public final class ProfitTracker {
     private void write(String json) throws IOException {
         File parent = file.getAbsoluteFile().getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-            throw new IOException("Impossibile creare " + parent);
+            throw new IOException("Could not create " + parent);
         }
         File tmp = new File(file.getPath() + ".tmp");
         try (Writer out = new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8)) {

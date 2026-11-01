@@ -135,7 +135,7 @@ public class FlipScoutConfigGui extends GuiScreen {
         next.enabled = page < pages - 1;
         buttonList.add(prev);
         buttonList.add(next);
-        buttonList.add(new GuiButton(DONE, 10, bottom, SIDEBAR, 20, "Fatto"));
+        buttonList.add(new GuiButton(DONE, 10, bottom, SIDEBAR, 20, "Done"));
     }
 
     private String toggleText(Config.Setting setting) {
@@ -237,10 +237,10 @@ public class FlipScoutConfigGui extends GuiScreen {
         drawDefaultBackground();
         drawRect(5, TOP - 4, 10 + SIDEBAR + 5, height - BOTTOM, 0x60000000);
         drawRect(listLeft() - 5, TOP - 4, width - 5, height - BOTTOM, 0x60000000);
-        drawCenteredString(fontRendererObj, "§6§lFlipScout §7- Impostazioni", width / 2, 8, 0xFFFFFF);
+        drawCenteredString(fontRendererObj, "§6§lFlipScout §7- Settings", width / 2, 8, 0xFFFFFF);
         search.drawTextBox();
         if (search.getText().isEmpty() && !search.isFocused()) {
-            drawString(fontRendererObj, "§8Cerca un'impostazione...", listLeft() + 4, 25, 0xFFFFFF);
+            drawString(fontRendererObj, "§8Search a setting...", listLeft() + 4, 25, 0xFFFFFF);
         }
         List<String> hover = null;
         boolean searching = !query.trim().isEmpty();
@@ -265,11 +265,11 @@ public class FlipScoutConfigGui extends GuiScreen {
             }
         }
         if (rows.isEmpty()) {
-            drawCenteredString(fontRendererObj, "§7Nessuna impostazione trovata", (listLeft() + listRight()) / 2, TOP + 10,
+            drawCenteredString(fontRendererObj, "§7No settings found", (listLeft() + listRight()) / 2, TOP + 10,
                 0xFFFFFF);
         }
         int middle = (listLeft() + listRight()) / 2;
-        drawCenteredString(fontRendererObj, "Pagina " + (page + 1) + "/" + pages, middle, height - 20, 0xAAAAAA);
+        drawCenteredString(fontRendererObj, "Page " + (page + 1) + "/" + pages, middle, height - 20, 0xAAAAAA);
         if (problem != null) {
             drawString(fontRendererObj, "§c" + fontRendererObj.trimStringToWidth(problem, width - 20), 10, height - BOTTOM + 1,
                 0xFFFFFF);

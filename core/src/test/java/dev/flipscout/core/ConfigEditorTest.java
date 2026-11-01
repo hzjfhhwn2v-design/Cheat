@@ -52,8 +52,8 @@ class ConfigEditorTest {
         List<Config.Setting> found = editor.settings(null, "coflnet");
         assertTrue(found.contains(setting("source.coflnet")));
         assertTrue(found.contains(setting("url.coflnet")));
-        assertTrue(editor.settings(null, "PAUSA TRA").contains(setting("bz.flip.cooldownMinutes")));
-        assertTrue(editor.settings(null, "nessuna impostazione si chiama così").isEmpty());
+        assertTrue(editor.settings(null, "COOLDOWN BETWEEN").contains(setting("bz.flip.cooldownMinutes")));
+        assertTrue(editor.settings(null, "no setting is called like this").isEmpty());
     }
 
     @Test
@@ -65,13 +65,13 @@ class ConfigEditorTest {
         assertEquals(2_000_000L, flipScout.config().ahMinProfit);
         assertEquals("2m", editor.text(minProfit));
         assertFalse(editor.isDefault(minProfit));
-        assertEquals("serve un importo, es. 500k o 2m", editor.set(minProfit, "tanti"));
+        assertEquals("an amount is required, e.g. 500k or 2m", editor.set(minProfit, "lots"));
         assertEquals(2_000_000L, flipScout.config().ahMinProfit);
         editor.reset(minProfit);
         assertTrue(editor.isDefault(minProfit));
 
         Config.Setting interval = setting("bz.intervalSeconds");
-        assertEquals("deve essere tra 10 e 600", editor.set(interval, "5"));
+        assertEquals("must be between 10 and 600", editor.set(interval, "5"));
         assertEquals("10 - 600", interval.hint());
 
         Config.Setting sound = setting("sound");

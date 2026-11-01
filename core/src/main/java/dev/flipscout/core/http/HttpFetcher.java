@@ -10,7 +10,7 @@ public interface HttpFetcher {
 
     /** Sends {@code body} with POST (for Discord webhooks). */
     default Response post(String url, String contentType, byte[] body) throws IOException {
-        throw new IOException("POST non supportato");
+        throw new IOException("POST not supported");
     }
 
     final class Response implements Closeable {

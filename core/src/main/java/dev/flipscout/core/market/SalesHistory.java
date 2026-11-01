@@ -274,7 +274,7 @@ public final class SalesHistory {
         throws IOException {
         File parent = file.getAbsoluteFile().getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-            throw new IOException("Impossibile creare " + parent);
+            throw new IOException("Could not create " + parent);
         }
         File tmp = new File(file.getPath() + ".tmp");
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new GZIPOutputStream(new FileOutputStream(tmp))));
@@ -308,7 +308,7 @@ public final class SalesHistory {
         try {
             in = new DataInputStream(new BufferedInputStream(new GZIPInputStream(new FileInputStream(file))));
             if (in.readInt() != MAGIC || in.readInt() != VERSION) {
-                Log.warn("File delle vendite non riconosciuto, lo ignoro: " + file);
+                Log.warn("Unrecognized sales file, ignoring it: " + file);
                 return;
             }
             int observedCount = in.readInt();
@@ -332,7 +332,7 @@ public final class SalesHistory {
             }
             dirty = false;
         } catch (IOException e) {
-            Log.warn("File delle vendite danneggiato, riparto da zero: " + file, e);
+            Log.warn("Damaged sales file, starting over: " + file, e);
             byKey.clear();
             observed.clear();
             observedFrom = Integer.MIN_VALUE;

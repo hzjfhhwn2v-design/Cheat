@@ -232,7 +232,7 @@ class EngineTest {
         assertEquals(0, platform.sounds);
         List<Msg> summary = platform.withCommand("/flipscout blacklist list");
         assertEquals(1, summary.size());
-        assertTrue(summary.get(0).toPlainString().contains("I tuoi filtri hanno bloccato 1 flip"));
+        assertTrue(summary.get(0).toPlainString().contains("Your filters blocked 1 flip"));
         String hover = summary.get(0).parts().get(0).hover;
         assertTrue(hover.contains("Hyperion") && hover.contains("(HYPERION)"), hover);
 

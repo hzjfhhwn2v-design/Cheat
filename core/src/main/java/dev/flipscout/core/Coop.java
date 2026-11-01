@@ -125,7 +125,7 @@ final class Coop {
                     continue;
                 }
             } catch (IOException | RuntimeException e) {
-                Log.debug("Nome del membro della coop " + member + " non trovato: " + e);
+                Log.debug("Name of coop member " + member + " not found: " + e);
             }
             failedLookups.put(member, now);
         }

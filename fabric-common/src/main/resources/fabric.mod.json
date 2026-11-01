@@ -3,9 +3,10 @@
   "id": "flipscout",
   "version": "${version}",
   "name": "FlipScout",
-  "description": "Notifiche dei flip di aste e bazaar di Hypixel SkyBlock con i dati dell'API ufficiale e di Coflnet, conto dei guadagni e resoconti su Discord. Non compra niente da solo.",
+  "description": "Hypixel SkyBlock auction and bazaar flip notifier, powered by the official API and Coflnet, with a profit tracker and Discord reports. Never buys anything by itself.",
   "authors": ["FlipScout"],
-  "license": "MIT",
+  "license": "ARR",
+  "icon": "assets/flipscout/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": ["dev.flipscout.fabric.FlipScoutFabric"]

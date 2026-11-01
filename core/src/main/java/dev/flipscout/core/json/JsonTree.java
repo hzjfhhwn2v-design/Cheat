@@ -73,7 +73,7 @@ public final class JsonTree {
                 in.nextNull();
                 return null;
             default:
-                throw new IOException("JSON inatteso: " + in.peek());
+                throw new IOException("Unexpected JSON: " + in.peek());
         }
     }
 

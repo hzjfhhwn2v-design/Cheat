@@ -39,23 +39,45 @@ class CommandsTest {
     void profitCommands() {
         flipScout.onChat("[Bazaar] Bought 1x Enchanted Diamond for 160 coins!");
         flipScout.onChat("[Bazaar] Sold 1x Enchanted Diamond for 200 coins!");
-        run("guadagni");
+        run("profits");
         String text = platform.allText();
-        assertTrue(text.contains("Sessione (attiva): +40 in 1 flip"), text);
-        assertTrue(text.contains("Totale: +40 in 1 flip"), text);
-        run("sessione", "pausa");
-        assertTrue(platform.allText().contains("Sessione in pausa"), platform.allText());
-        run("sessione", "reset");
-        run("sessione", "storico");
-        assertTrue(platform.allText().contains("Sessioni precedenti"), platform.allText());
-        run("flip");
+        assertTrue(text.contains("Session (active): +40 in 1 flip"), text);
+        assertTrue(text.contains("Total: +40 in 1 flip"), text);
+        run("session", "pause");
+        assertTrue(platform.allText().contains("Session paused"), platform.allText());
+        run("session", "reset");
+        run("session", "history");
+        assertTrue(platform.allText().contains("Previous sessions"), platform.allText());
+        run("flips");
         assertTrue(platform.allText().contains("Enchanted Diamond 160 → 200 +40"), platform.allText());
-        run("totale", "reset");
-        assertTrue(platform.allText().contains("totale reset conferma"), platform.allText());
+        run("total");
+        assertTrue(platform.allText().matches("(?s).*Last few days:\\s+\\d{1,2} [A-Z][a-z]{2}: \\+40 in 1 flip.*"),
+            platform.allText());
+        run("total", "reset");
+        assertTrue(platform.allText().contains("total reset confirm"), platform.allText());
         assertEquals(40, flipScout.tracker().total().profit, 1e-9);
-        run("totale", "reset", "conferma");
+        run("total", "reset", "confirm");
         assertEquals(0, flipScout.tracker().total().profit, 1e-9);
-        assertEquals(Arrays.asList("pausa", "riprendi", "reset", "storico"), flipScout.complete(new String[] {"sessione", ""}));
+        assertEquals(Arrays.asList("pause", "resume", "reset", "history"), flipScout.complete(new String[] {"session", ""}));
+        // The Italian names of earlier versions still work.
+        platform.messages.clear();
+        run("guadagni");
+        assertTrue(platform.allText().contains("Profits"), platform.allText());
+    }
+
+    @Test
+    void theOldProfitsFileIsRenamedOnce() throws IOException {
+        File data = new File(dir, "data");
+        assertTrue(data.mkdirs());
+        File old = new File(data, "guadagni.json");
+        Files.write(old.toPath(), "{}".getBytes(StandardCharsets.UTF_8));
+        File renamed = FlipScout.profitsFile(data);
+        assertEquals("profits.json", renamed.getName());
+        assertTrue(renamed.isFile());
+        assertFalse(old.exists());
+        // Later starts find profits.json, and a new install starts with it.
+        assertEquals(renamed, FlipScout.profitsFile(data));
+        assertEquals("profits.json", FlipScout.profitsFile(new File(dir, "fresh")).getName());
     }
 
     @Test
@@ -91,11 +113,11 @@ class CommandsTest {
 
         fs.command(new String[] {"recent"});
         String text = platform.allText();
-        assertTrue(text.contains("1 aste su 1 già vendute, metà entro 12s"), text);
-        assertTrue(text.contains("[venduta dopo 12s]"), text);
+        assertTrue(text.contains("1 of 1 auctions already sold, half within 12s"), text);
+        assertTrue(text.contains("[sold after 12s]"), text);
         fs.command(new String[] {"open"});
         assertTrue(platform.commands.isEmpty());
-        assertTrue(platform.allText().contains("già stata comprata"), platform.allText());
+        assertTrue(platform.allText().contains("Someone else already bought this auction"), platform.allText());
     }
 
     @Test
@@ -125,15 +147,15 @@ class CommandsTest {
 
     @Test
     void invalidValuesAreRejected() {
-        run("set", "ah.minPercent", "tanti");
+        run("set", "ah.minPercent", "lots");
         run("set", "bz.intervalSeconds", "1");
         run("set", "nope", "1");
         assertEquals(5, flipScout.config().ahMinPercent, 1e-9);
         assertEquals(20, flipScout.config().bzIntervalSeconds);
         String text = platform.allText();
-        assertTrue(text.contains("ah.minPercent: serve un numero"), text);
-        assertTrue(text.contains("deve essere tra 10 e 600"), text);
-        assertTrue(text.contains("Impostazione sconosciuta"), text);
+        assertTrue(text.contains("ah.minPercent: a number is required"), text);
+        assertTrue(text.contains("must be between 10 and 600"), text);
+        assertTrue(text.contains("Unknown setting"), text);
     }
 
     @Test
@@ -174,14 +196,14 @@ class CommandsTest {
         run("recent");
         run("open");
         run("top", "bz");
-        run("sbagliato");
+        run("wrong");
         String text = platform.allText();
         assertTrue(text.contains("FlipScout " + FlipScout.VERSION), text);
-        assertTrue(text.contains("/flipscout set <chiave> <valore>"), text);
-        assertTrue(text.contains("Aste BIN indicizzate"), text);
+        assertTrue(text.contains("/flipscout set <key> <value>"), text);
+        assertTrue(text.contains("Indexed BIN auctions"), text);
         assertTrue(text.contains("bz.crash.dropPercent"), text);
-        assertTrue(text.contains("Ancora nessuna notifica"), text);
-        assertTrue(text.contains("Comando sconosciuto"), text);
+        assertTrue(text.contains("No notifications yet"), text);
+        assertTrue(text.contains("Unknown command"), text);
         assertTrue(platform.commands.isEmpty());
     }
 
@@ -190,7 +212,7 @@ class CommandsTest {
         String webhook = "https://discord.com/api/webhooks/1234567890/SecretToken_abc-123";
         run("set", "discord.webhook", "https://example.com/hook");
         assertEquals("", flipScout.config().discordWebhook);
-        assertTrue(platform.allText().contains("webhook di Discord"), platform.allText());
+        assertTrue(platform.allText().contains("a Discord webhook URL is required"), platform.allText());
         run("set", "discord.webhook", webhook);
         assertEquals(webhook, flipScout.config().discordWebhook);
         run("config", "discord");
@@ -198,8 +220,8 @@ class CommandsTest {
         run("status");
         String text = platform.allText();
         assertFalse(text.contains("SecretToken"), text);
-        assertTrue(text.contains("impostato"), text);
-        assertTrue(text.contains("Resoconti su Discord"), text);
+        assertTrue(text.contains("set (hidden, change it from /flipscout gui)"), text);
+        assertTrue(text.contains("Discord reports"), text);
         // No value empties it, which switches the reports off.
         run("set", "discord.webhook");
         assertEquals("", flipScout.config().discordWebhook);
@@ -210,7 +232,7 @@ class CommandsTest {
     @Test
     void coopCommandExplainsHowMembersAreFound() {
         run("coop");
-        assertTrue(platform.allText().contains("Nessun membro della coop"), platform.allText());
+        assertTrue(platform.allText().contains("No coop members found yet"), platform.allText());
     }
 
     @Test
@@ -220,8 +242,8 @@ class CommandsTest {
         Msg.Part part = sample.parts().get(0);
         assertEquals("/flipscout help", part.command);
         assertEquals(Msg.Click.SUGGEST, part.click);
-        assertTrue(part.hover.contains("Profitto"), part.hover);
-        assertTrue(sample.toPlainString().contains("[APRI]"));
+        assertTrue(part.hover.contains("Profit"), part.hover);
+        assertTrue(sample.toPlainString().contains("[OPEN]"));
     }
 
     @Test
