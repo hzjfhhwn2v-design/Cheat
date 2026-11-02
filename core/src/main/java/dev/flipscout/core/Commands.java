@@ -2,6 +2,8 @@ package dev.flipscout.core;
 
 import dev.flipscout.core.api.BazaarSnapshot;
 import dev.flipscout.core.api.ItemCatalog;
+import dev.flipscout.core.extra.MayorText;
+import dev.flipscout.core.extra.Mayors;
 import dev.flipscout.core.extra.Opportunity;
 import dev.flipscout.core.extra.OpportunityKind;
 import dev.flipscout.core.extra.OpportunityText;
@@ -38,7 +40,7 @@ import java.util.function.LongSupplier;
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
-        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "discord", "coop", "set", "config",
+        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "discord", "coop", "set", "config",
         "blacklist", "status", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
@@ -163,6 +165,10 @@ final class Commands {
                 case "lowsupply":
                     lowSupply(args);
                     break;
+                case "mayor":
+                case "sindaco":
+                    mayor();
+                    break;
                 case "credits":
                     credits();
                     break;
@@ -205,6 +211,7 @@ final class Commands {
         helpLine("top [ah|bz] [n]", "top ", "the best deals right now");
         helpLine("kat|craft|forge|fusion|npc|books [n]", "craft", "other flips, from SkyCofl's lists");
         helpLine("lowsupply [n]", "lowsupply", "items with few auctions listed");
+        helpLine("mayor", "mayor", "mayor, election favourite and what usually moves under them");
         helpLine("recent", "recent", "latest notifications");
         helpLine("open", "open", "opens the latest notification");
         helpLine("profits", "profits", "how much you made: session, today, total");
@@ -706,6 +713,34 @@ final class Commands {
                 }
             }
         });
+    }
+
+    private void mayor() {
+        final Mayors m = engine.mayors();
+        m.want();
+        if (m.election() != null) {
+            showMayor(m);
+            return;
+        }
+        info("§7Reading the election...");
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    m.refreshElection();
+                } catch (IOException | RuntimeException e) {
+                    error("Could not read the election from Hypixel: " + e.getMessage());
+                    return;
+                }
+                showMayor(m);
+            }
+        });
+    }
+
+    private void showMayor(Mayors m) {
+        for (Msg line : MayorText.view(m, engine.market(), clock.getAsLong())) {
+            platform.showMessage(line);
+        }
     }
 
     private boolean coflnetOn() {

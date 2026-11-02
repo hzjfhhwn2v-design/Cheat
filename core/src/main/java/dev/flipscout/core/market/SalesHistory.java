@@ -15,6 +15,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Comparator;
+import java.util.Collections;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
@@ -183,6 +187,34 @@ public final class SalesHistory {
         observedFrom = fromMinute;
         observedCount = count;
         return count;
+    }
+
+    /**
+     * Keys with at least {@code minSamples} recorded sales, those with the most coins traded
+     * (median price times sales) first.
+     */
+    public synchronized List<String> mostTraded(int limit, int minSamples) {
+        final Map<String, Double> traded = new HashMap<String, Double>();
+        for (Map.Entry<String, Ring> entry : byKey.entrySet()) {
+            Ring ring = entry.getValue();
+            if (ring.size < Math.max(1, minSamples)) {
+                continue;
+            }
+            double[] prices = new double[ring.size];
+            for (int i = 0; i < ring.size; i++) {
+                prices[i] = ring.priceAt(i);
+            }
+            Arrays.sort(prices);
+            traded.put(entry.getKey(), prices[prices.length / 2] * ring.size);
+        }
+        List<String> keys = new ArrayList<String>(traded.keySet());
+        Collections.sort(keys, new Comparator<String>() {
+            @Override
+            public int compare(String a, String b) {
+                return Double.compare(traded.get(b), traded.get(a));
+            }
+        });
+        return new ArrayList<String>(keys.subList(0, Math.min(limit, keys.size())));
     }
 
     public synchronized int observedMinutes() {

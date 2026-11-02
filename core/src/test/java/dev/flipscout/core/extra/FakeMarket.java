@@ -4,6 +4,7 @@ import dev.flipscout.core.Config;
 import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.ItemCatalog;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,6 +38,11 @@ final class FakeMarket implements Market {
     @Override
     public BazaarProduct bazaar(String id) {
         return bazaar.get(id);
+    }
+
+    @Override
+    public Collection<BazaarProduct> bazaarProducts() {
+        return bazaar.values();
     }
 
     @Override

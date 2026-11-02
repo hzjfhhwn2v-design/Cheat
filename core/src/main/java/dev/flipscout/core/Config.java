@@ -102,6 +102,11 @@ public final class Config {
     public volatile int otherRefreshMinutes = 5;
     public volatile int otherCooldownHours = 6;
 
+    // Mayors
+    public volatile boolean mayorNotify = true;
+    public volatile int mayorItems = 80;
+    public volatile double mayorMinChange = 8;
+
     // Sources
     public volatile boolean sourceCoflnet = true;
     public volatile String urlHypixel = "https://api.hypixel.net";
@@ -429,6 +434,20 @@ public final class Config {
                 + " alerted again while it lasts", 1, 72) {
                 int read(Config c) { return c.otherCooldownHours; }
                 void write(Config c, int v) { c.otherCooldownHours = v; }
+            }),
+        new Section("Mayors",
+            new BoolSetting("mayor.notify", "Election alert", "When an election has a clear favourite, says which items usually"
+                + " rise or fall under them (reads a year of prices every few days)") {
+                boolean read(Config c) { return c.mayorNotify; }
+                void write(Config c, boolean v) { c.mayorNotify = v; }
+            },
+            new IntSetting("mayor.items", "Items analysed", "How many of the most traded items the mayor analysis looks at", 20, 200) {
+                int read(Config c) { return c.mayorItems; }
+                void write(Config c, int v) { c.mayorItems = v; }
+            },
+            new DecimalSetting("mayor.minChange", "Minimum price change (%)", "Smallest usual price change worth showing", 1, 100) {
+                double read(Config c) { return c.mayorMinChange; }
+                void write(Config c, double v) { c.mayorMinChange = v; }
             }),
         new Section("Data sources",
             new BoolSetting("source.coflnet", "Use Coflnet data", "Use Coflnet (sky.coflnet.com) for rare-item sales, volumes"

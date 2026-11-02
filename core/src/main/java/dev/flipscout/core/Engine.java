@@ -11,6 +11,8 @@ import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.ItemCatalog;
 import dev.flipscout.core.extra.CoflLists;
 import dev.flipscout.core.extra.Market;
+import dev.flipscout.core.extra.MayorText;
+import dev.flipscout.core.extra.Mayors;
 import dev.flipscout.core.extra.Opportunities;
 import dev.flipscout.core.extra.Opportunity;
 import dev.flipscout.core.extra.OpportunityKind;
@@ -33,6 +35,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
@@ -207,6 +210,7 @@ public final class Engine {
     final Market market;
     final CoflLists coflLists;
     final Opportunities opportunities;
+    final Mayors mayors;
     private final Notifier notifier = new Notifier();
     private final BlockedFlips blocked = new BlockedFlips();
 
@@ -249,6 +253,8 @@ public final class Engine {
     private final AtomicBoolean saveJob = new AtomicBoolean();
     private final AtomicBoolean prefetchJob = new AtomicBoolean();
     private final AtomicBoolean otherJob = new AtomicBoolean();
+    private final AtomicBoolean mayorJob = new AtomicBoolean();
+    private volatile long nextMayorCheck;
     private final AtomicBoolean coopJob = new AtomicBoolean();
     private final AtomicInteger pendingConfirmations = new AtomicInteger();
     private volatile long nextItems;
@@ -280,6 +286,19 @@ public final class Engine {
         this.market = new LiveMarket();
         this.coflLists = new CoflLists(http, () -> config.urlCoflnet);
         this.opportunities = new Opportunities(config, coflLists, market, clock);
+        this.mayors = new Mayors(config, http, market, clock, new File(dataDir, "mayor.json"), this::mayorAuctionItems,
+            Mayors.SLEEP);
+    }
+
+    /** Plain auction items with the most coins traded, for the mayor analysis. */
+    private List<String> mayorAuctionItems() {
+        List<String> out = new ArrayList<String>();
+        for (String key : sales.mostTraded(200, 5)) {
+            if (key.matches("[A-Z0-9_]+")) {
+                out.add(key);
+            }
+        }
+        return out;
     }
 
     /** Live prices for the extra features: our bazaar snapshot, item list and auction index. */
@@ -293,6 +312,12 @@ public final class Engine {
         public BazaarProduct bazaar(String id) {
             BazaarSnapshot snapshot = prices.bazaar();
             return snapshot == null || id == null ? null : snapshot.get(id);
+        }
+
+        @Override
+        public Collection<BazaarProduct> bazaarProducts() {
+            BazaarSnapshot snapshot = prices.bazaar();
+            return snapshot == null ? Collections.<BazaarProduct>emptyList() : snapshot.products.values();
         }
 
         @Override
@@ -473,6 +498,12 @@ public final class Engine {
             final OpportunityKind due = opportunities.due(now);
             if (due != null) {
                 background(otherJob, () -> refreshOpportunities(due));
+            }
+        }
+        if (now >= nextMayorCheck && !mayorJob.get()) {
+            nextMayorCheck = now + 10_000L;
+            if (mayors.due(now)) {
+                background(mayorJob, this::updateMayors);
             }
         }
         if (now >= nextSave) {
@@ -1077,6 +1108,29 @@ public final class Engine {
 
     public Opportunities opportunities() {
         return opportunities;
+    }
+
+    private void updateMayors() {
+        try {
+            mayors.update();
+            status.ok("mayor");
+        } catch (IOException e) {
+            status.error("mayor", e);
+            return;
+        } catch (RuntimeException e) {
+            status.error("mayor", e);
+            mayors.failed(e);
+            return;
+        }
+        Mayors.Candidate favourite = mayors.alertFavourite();
+        if (favourite != null && (!config.onlyInSkyblock || platform.isInSkyblock())) {
+            status.otherNotifications.incrementAndGet();
+            platform.showMessage(MayorText.alert(mayors, market, favourite));
+        }
+    }
+
+    public Mayors mayors() {
+        return mayors;
     }
 
     public Market market() {
