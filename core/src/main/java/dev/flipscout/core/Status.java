@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** What the engine is doing, for /flipscout status. */
 public final class Status {
@@ -23,6 +24,18 @@ public final class Status {
     public final AtomicInteger auctionNotifications = new AtomicInteger();
     public final AtomicInteger bazaarNotifications = new AtomicInteger();
     public final AtomicInteger otherNotifications = new AtomicInteger();
+    /** Time from an auction's listing to its alert, over this session's auction flips. */
+    public final AtomicLong alertDelaySum = new AtomicLong();
+    public final AtomicInteger alertDelayCount = new AtomicInteger();
+    public volatile long alertDelayBest = Long.MAX_VALUE;
+
+    void recordAlertDelay(long millis) {
+        alertDelaySum.addAndGet(millis);
+        alertDelayCount.incrementAndGet();
+        if (millis < alertDelayBest) {
+            alertDelayBest = millis;
+        }
+    }
 
     private final Map<String, String> errors = new ConcurrentHashMap<String, String>();
 

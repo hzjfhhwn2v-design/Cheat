@@ -74,7 +74,7 @@ public final class Engine {
     private static final long HOUR = 60 * MINUTE;
     /** Auctions created this recently are new: older ones were simply missed, not just listed. */
     private static final long FRESH_MS = 5 * MINUTE;
-    private static final int MAX_RECENT = 30;
+    private static final int MAX_RECENT = 100;
     /** Extra auction pages read per poll while they still contain new auctions. */
     private static final int EXTRA_POLL_PAGES = 3;
     /** How often the engine thread wakes up, i.e. the most a due poll can be late. */
@@ -780,6 +780,10 @@ public final class Engine {
 
     private void notifyAuction(AuctionFlip flip) {
         status.auctionNotifications.incrementAndGet();
+        long delay = serverTime() - flip.listing.start;
+        if (flip.listing.start > 0 && delay >= 0 && delay < FRESH_MS) {
+            status.recordAlertDelay(delay);
+        }
         deliver(notifier.auction(flip, serverTime()), clock.getAsLong(), flip);
     }
 

@@ -44,9 +44,9 @@ import java.util.function.LongSupplier;
  * saved as JSON.
  */
 public final class ProfitTracker {
-    private static final int MAX_FLIPS = 100;
-    private static final int MAX_HISTORY = 20;
-    private static final int MAX_DAYS = 31;
+    private static final int MAX_FLIPS = 1000;
+    private static final int MAX_HISTORY = 100;
+    private static final int MAX_DAYS = 365;
     private static final int MAX_LOTS = 500;
     private static final long UNCLAIMED_MAX_AGE_MS = 30L * 24 * 60 * 60_000L;
     /**

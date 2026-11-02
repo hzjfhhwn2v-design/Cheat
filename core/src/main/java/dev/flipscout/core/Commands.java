@@ -22,6 +22,7 @@ import dev.flipscout.core.util.Text;
 import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -43,7 +44,7 @@ final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
         "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "history", "player", "discord",
-        "coop", "set", "config",
+        "coop", "replay", "export", "set", "config",
         "blacklist", "status", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
@@ -113,7 +114,13 @@ final class Commands {
                     break;
                 case "recent":
                 case "ultimi":
-                    recent();
+                    recent(args);
+                    break;
+                case "replay":
+                    replay();
+                    break;
+                case "export":
+                    export(args);
                     break;
                 case "open":
                 case "apri":
@@ -144,7 +151,7 @@ final class Commands {
                     break;
                 case "flips":
                 case "flip":
-                    flips();
+                    flips(args);
                     break;
                 case "stock":
                 case "inventory":
@@ -224,12 +231,14 @@ final class Commands {
         helpLine("mayor", "mayor", "mayor, election favourite and what usually moves under them");
         helpLine("history <item> [day|week|month|all]", "history ", "price history of an item, as a chart");
         helpLine("player <name>", "player ", "a player's auctions: up for sale now and the last ones");
-        helpLine("recent", "recent", "latest notifications");
+        helpLine("recent [page]", "recent", "latest notifications (the last 100)");
+        helpLine("replay", "replay", "notified auctions that are still up for sale");
         helpLine("open", "open", "opens the latest notification");
         helpLine("profits", "profits", "how much you made: session, today, total");
         helpLine("session [pause|resume|reset|history]", "session ", "manages the session");
         helpLine("total [reset]", "total", "total and the last few days");
-        helpLine("flips", "flips", "the latest closed flips");
+        helpLine("flips [page]", "flips", "closed flips (the last 1000)");
+        helpLine("export [flips|notifications|bazaar]", "export ", "saves them as CSV (bazaar: JSON) for spreadsheets");
         helpLine("stock [clear]", "stock", "bought and not sold yet");
         helpLine("discord [test]", "discord", "Discord reports: status and a test message");
         helpLine("coop", "coop", "your coop members, recognized from their auctions");
@@ -347,28 +356,119 @@ final class Commands {
         });
     }
 
-    private void recent() {
+    private static final int RECENT_PAGE = 20;
+    private static final int FLIPS_PAGE = 10;
+
+    private void recent(String[] args) {
         List<Engine.Notification> notifications = engine.recent();
         if (notifications.isEmpty()) {
             info("§7No notifications yet in this session.");
             return;
         }
-        info("§fLatest notifications §8(newest at the bottom)" + soldSummary(notifications) + "§f:");
+        int pages = (notifications.size() + RECENT_PAGE - 1) / RECENT_PAGE;
+        int page = Math.min(page(args, 1), pages);
+        info("§fLatest notifications §8(" + (pages > 1 ? "page " + page + "/" + pages + ", " : "") + "newest at the bottom)"
+            + soldSummary(notifications) + "§f:");
         long now = clock.getAsLong();
-        List<Engine.Notification> ordered = new ArrayList<Engine.Notification>(notifications);
+        List<Engine.Notification> ordered = new ArrayList<Engine.Notification>(notifications.subList((page - 1) * RECENT_PAGE,
+            Math.min(notifications.size(), page * RECENT_PAGE)));
         Collections.reverse(ordered);
         for (Engine.Notification notification : ordered) {
-            Msg msg = new Msg().add("§8" + Text.duration(now - notification.time) + " ago ");
-            for (Msg.Part part : notification.message.parts()) {
-                String text = part.text.startsWith(Msg.PREFIX) ? part.text.substring(Msg.PREFIX.length()) : part.text;
-                if (part.command != null && part.click == Msg.Click.RUN) {
-                    msg.run(text, part.command, part.hover);
-                } else {
-                    msg.add(text, part.hover);
-                }
+            platform.showMessage(replayed(notification, now));
+        }
+        if (page < pages) {
+            platform.showMessage(new Msg().run("§7  §e[OLDER]", "/flipscout recent " + (page + 1), "§7Page " + (page + 1)));
+        }
+    }
+
+    /** A notification as it was, with how long ago it came and whether the auction sold since. */
+    private Msg replayed(Engine.Notification notification, long now) {
+        Msg msg = new Msg().add("§8" + Text.duration(now - notification.time) + " ago ");
+        for (Msg.Part part : notification.message.parts()) {
+            String text = part.text.startsWith(Msg.PREFIX) ? part.text.substring(Msg.PREFIX.length()) : part.text;
+            if (part.command != null && part.click == Msg.Click.RUN) {
+                msg.run(text, part.command, part.hover);
+            } else if (part.command != null && part.click == Msg.Click.SUGGEST) {
+                msg.suggest(text, part.command, part.hover);
+            } else {
+                msg.add(text, part.hover);
             }
-            addSaleState(msg, notification);
-            platform.showMessage(msg);
+        }
+        addSaleState(msg, notification);
+        return msg;
+    }
+
+    /** The notified auctions that nobody has bought yet. */
+    private void replay() {
+        List<Engine.Notification> active = new ArrayList<Engine.Notification>();
+        for (Engine.Notification n : engine.recent()) {
+            if (n.auctionUuid != null && n.soldAt() == 0 && engine.index.contains(n.auctionUuid)) {
+                active.add(n);
+            }
+        }
+        if (active.isEmpty()) {
+            info("§7None of the notified auctions is still up for sale.");
+            return;
+        }
+        info("§fNotified auctions still up for sale §8(newest at the bottom):");
+        long now = clock.getAsLong();
+        List<Engine.Notification> shown = new ArrayList<Engine.Notification>(active.subList(0, Math.min(15, active.size())));
+        Collections.reverse(shown);
+        for (Engine.Notification notification : shown) {
+            platform.showMessage(replayed(notification, now));
+        }
+    }
+
+    private void export(String[] args) {
+        final String what = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "flips";
+        if (!Arrays.asList("flips", "notifications", "recent", "bazaar").contains(what)) {
+            throw new IllegalArgumentException("Usage: /flipscout export [flips|notifications|bazaar]");
+        }
+        final Exporter exporter = new Exporter(new File(configFile.getAbsoluteFile().getParentFile(), "exports"),
+            ZoneId.systemDefault());
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                long now = clock.getAsLong();
+                File file;
+                String count;
+                try {
+                    if ("bazaar".equals(what)) {
+                        BazaarSnapshot snapshot = engine.prices.bazaar();
+                        if (snapshot == null) {
+                            info("§eBazaar data not downloaded yet, try again shortly.");
+                            return;
+                        }
+                        file = exporter.bazaar(snapshot, engine.items(), now);
+                        count = snapshot.products.size() + " bazaar products";
+                    } else if ("flips".equals(what)) {
+                        List<ProfitTracker.Flip> flips = tracker.flips();
+                        file = exporter.flips(flips, now);
+                        count = count(flips.size(), "flip");
+                    } else {
+                        List<Engine.Notification> notifications = engine.recent();
+                        file = exporter.notifications(notifications, now);
+                        count = count(notifications.size(), "notification");
+                    }
+                } catch (IOException | RuntimeException e) {
+                    error("Could not write the file: " + e.getMessage());
+                    return;
+                }
+                platform.showMessage(new Msg().suggest(Msg.PREFIX + "§aSaved " + count + " to §f" + file.getPath(),
+                    file.getAbsolutePath(), "§7Click to put the full path in the chat box, to copy it"));
+            }
+        });
+    }
+
+    /** A page number from {@code args[index]}, 1 when missing. */
+    private static int page(String[] args, int index) {
+        if (args.length <= index) {
+            return 1;
+        }
+        try {
+            return Math.max(1, Integer.parseInt(args[index]));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Usage: /flipscout " + args[0] + " [page]");
         }
     }
 
@@ -584,6 +684,11 @@ final class Commands {
                 + (engine.opportunities().lastError() != null ? " §8(" + engine.opportunities().lastError() + ")" : ""));
         line("Notifications this session", s.auctionNotifications + " auctions, " + s.bazaarNotifications + " bazaar, "
             + s.otherNotifications + " other");
+        int alerts = s.alertDelayCount.get();
+        if (alerts > 0) {
+            line("Alert speed", "on average " + Text.duration(s.alertDelaySum.get() / alerts) + " from listing to alert §8("
+                + count(alerts, "auction flip") + ", fastest " + Text.duration(s.alertDelayBest) + ")");
+        }
         line("Discord", discordState(now));
         if (config.trackerEnabled) {
             ProfitTracker.Session session = tracker.session();
@@ -946,6 +1051,8 @@ final class Commands {
                     return startingWith(Arrays.asList("ah.", "bz.", "tracker.", "discord.", "source.", "url."), last);
                 case "discord":
                     return startingWith(Collections.singletonList("test"), last);
+                case "export":
+                    return startingWith(Arrays.asList("flips", "notifications", "bazaar"), last);
                 case "blacklist":
                     return startingWith(Arrays.asList("add", "remove", "list"), last);
                 case "history":
@@ -1158,19 +1265,25 @@ final class Commands {
         }
     }
 
-    private void flips() {
+    private void flips(String[] args) {
         List<ProfitTracker.Flip> flips = tracker.flips();
         if (flips.isEmpty()) {
             info("§7No closed flips yet: a flip closes when you sell something the mod saw you buy.");
             return;
         }
-        info("§fLatest flips §8(newest first, hover for the details):");
-        for (int i = 0; i < Math.min(10, flips.size()); i++) {
+        int pages = (flips.size() + FLIPS_PAGE - 1) / FLIPS_PAGE;
+        int page = Math.min(page(args, 1), pages);
+        info("§fLatest flips §8(" + (pages > 1 ? "page " + page + "/" + pages + ", " : "")
+            + "newest first, hover for the details):");
+        for (int i = (page - 1) * FLIPS_PAGE; i < Math.min(page * FLIPS_PAGE, flips.size()); i++) {
             ProfitTracker.Flip f = flips.get(i);
             platform.showMessage(new Msg().add("§7  " + f.item + (f.amount > 1 ? " x" + f.amount : "") + " §8"
                 + Coins.compact(f.cost) + " → " + Coins.compact(f.revenue) + " " + ProfitTracker.signed(f.profit),
                 "§7Bought: §f" + dateTime(f.boughtAt) + "\n§7Sold: §f" + dateTime(f.soldAt) + "\n§7Held for: §f"
                     + Text.duration(f.soldAt - f.boughtAt) + "\n§7Revenue after taxes: §f" + Coins.full(f.revenue)));
+        }
+        if (page < pages) {
+            platform.showMessage(new Msg().run("§7  §e[OLDER]", "/flipscout flips " + (page + 1), "§7Page " + (page + 1)));
         }
     }
 

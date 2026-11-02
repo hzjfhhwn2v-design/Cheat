@@ -106,11 +106,18 @@ class CommandsTest {
             TestData.auction("new", "s2", "Hyperion", "LEGENDARY", 800_000_000L, true, t1 - 10_000, hyperion)));
         clock.set(t1 + 1_000);
         fs.engine().tick();
+        fs.command(new String[] {"replay"});
+        assertTrue(platform.allText().contains("Notified auctions still up for sale"), platform.allText());
+        assertTrue(platform.messages.get(platform.messages.size() - 1).toPlainString().contains("AH Hyperion"),
+            platform.allText());
         long t2 = t1 + 60_000;
         http.put(h + "auctions_ended", TestData.endedPage(t2, TestData.ended("new", 800_000_000L, true, t1 + 2_000, hyperion)));
         clock.set(t2 + 1_000);
         fs.engine().tick();
 
+        fs.command(new String[] {"status"});
+        assertTrue(platform.allText().contains("Alert speed: on average 11 s from listing to alert (1 auction flip, fastest 11 s)"),
+            platform.allText());
         fs.command(new String[] {"recent"});
         String text = platform.allText();
         assertTrue(text.contains("1 of 1 auctions already sold, half within 12s"), text);
@@ -118,6 +125,28 @@ class CommandsTest {
         fs.command(new String[] {"open"});
         assertTrue(platform.commands.isEmpty());
         assertTrue(platform.allText().contains("Someone else already bought this auction"), platform.allText());
+        fs.command(new String[] {"replay"});
+        assertTrue(platform.allText().contains("None of the notified auctions is still up for sale."), platform.allText());
+    }
+
+    @Test
+    void exportWritesFilesNextToTheSettings() {
+        flipScout.onChat("[Bazaar] Bought 1x Enchanted Diamond for 160 coins!");
+        flipScout.onChat("[Bazaar] Sold 1x Enchanted Diamond for 200 coins!");
+        run("export");
+        File exports = new File(new File(dir, "flipscout"), "exports");
+        assertEquals(1, exports.listFiles().length, java.util.Arrays.toString(exports.listFiles()));
+        assertTrue(platform.allText().contains("Saved 1 flip to"), platform.allText());
+        run("export", "notifications");
+        assertEquals(2, exports.listFiles().length);
+        run("export", "bazaar");
+        assertTrue(platform.allText().contains("Bazaar data not downloaded yet"), platform.allText());
+        run("export", "everything");
+        assertTrue(platform.allText().contains("Usage: /flipscout export [flips|notifications|bazaar]"), platform.allText());
+        run("flips", "2");
+        assertTrue(platform.allText().contains("Latest flips (newest first"), platform.allText());
+        run("recent", "x");
+        assertTrue(platform.allText().contains("No notifications yet"), platform.allText());
     }
 
     @Test
