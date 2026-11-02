@@ -89,10 +89,13 @@ public class FlipScoutConfigGui extends GuiScreen {
         search.setFocused(searchFocused);
 
         List<Config.Section> sections = editor.sections();
+        // Section buttons share the height above "Done": closer together on small windows.
+        int step = Math.max(12, Math.min(22, (height - 30 - TOP) / Math.max(1, sections.size())));
         for (int i = 0; i < sections.size(); i++) {
             Config.Section s = sections.get(i);
             boolean selected = query.trim().isEmpty() && s == section;
-            buttonList.add(new GuiButton(SECTION + i, 10, TOP + i * 22, SIDEBAR, 20, (selected ? "§e» " : "") + s.title));
+            buttonList.add(new GuiButton(SECTION + i, 10, TOP + i * step, SIDEBAR, Math.min(20, step - 2),
+                (selected ? "§e» " : "") + s.title));
         }
 
         List<Config.Setting> settings = editor.settings(section, query);

@@ -1575,9 +1575,15 @@ public final class Engine {
         return sb.toString();
     }
 
+    /** The latest notification that can be opened (with a command), or null. */
     public Notification lastNotification() {
         synchronized (recent) {
-            return recent.peekFirst();
+            for (Notification notification : recent) {
+                if (notification.command != null) {
+                    return notification;
+                }
+            }
+            return null;
         }
     }
 

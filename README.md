@@ -16,6 +16,9 @@ Available for **Forge 1.8.9** and for **Fabric** from 1.21.7 to 26.3 (with Fabri
 | **BZ flip** | Placing a buy order and a sell offer leaves a high margin after tax, and the product trades often enough per hour. If the sell price is more than 25% above the usual (someone is holding the price up) the flip is skipped; in the first 15 minutes, without history, margins above 100% are skipped. |
 | **BZ crash** | The instant-buy price fell far below the median of the last hour and a half (someone dumped). |
 | **BZ→NPC** | Buying at the bazaar and selling to an NPC pays. |
+| **AH→NPC** | An auction costs less than what an NPC pays for the item: a sure profit, no taxes. |
+| **KAT, CRAFT, FORGE, FUSION, NPC, BOOK** | Pets worth upgrading at Kat, items worth crafting or forging, shard fusions, items worth buying from an NPC and reselling, enchanted books worth combining: from SkyCofl's lists, priced again with live prices (see [Other flips](#other-flips-skycofl)). |
+| **Election** | Once per election, when one candidate is clearly ahead: the items that usually rise or fall under them (see [Mayors](#mayors-and-elections)). |
 
 Every notification shows the price, the estimated value, the profit and the sales per day; **hover over it** to see
 where the estimate comes from (lowest BIN of the other sellers, sales median, Coflnet) and the taxes.
@@ -37,6 +40,13 @@ Example:
 ```
 
 The last part of an AH line (`4s`) is how long ago the auction was listed.
+
+**Item tooltips** show what a SkyBlock item resells for (lowest BIN, recent sales, sales a day, upgrades counted) and a
+**lowball** price: by default 85% of what it fetches after fees (`tooltip.lowballPercent`). Bazaar items show what the
+bazaar pays. Turn it off with `tooltip.enabled off`.
+
+`/flipscout blocked` lists the auctions that looked like a flip but missed one of your filters, and which one (margin,
+minimum profit, sales a day, budget, minimum price, blacklist...).
 
 ## How fast it is
 
@@ -99,19 +109,30 @@ on every push.
 | `/flipscout ah on\|off` | auction notifications |
 | `/flipscout bz on\|off` | bazaar notifications; also `bz flip\|crash\|npc on\|off` for each type |
 | `/flipscout top [ah\|bz] [n]` | the best deals right now, including ones listed a while ago |
-| `/flipscout recent` | the last 30 notifications, still clickable; marks auctions that already sold and how fast |
+| `/flipscout recent [page]` | the last 100 notifications, still clickable; marks auctions that already sold and how fast |
+| `/flipscout replay` | the notified auctions nobody has bought yet |
+| `/flipscout blocked` | auctions your filters turned down, and why |
+| `/flipscout kat\|craft\|forge\|fusion\|npc\|books [n]` | the other kinds of flip, from SkyCofl's lists (see below) |
+| `/flipscout lowsupply [n]` | items with few auctions up for sale, most traded first |
+| `/flipscout mayor` | mayor, minister, the open election and what usually moves under the favourite |
+| `/flipscout history <item> [day\|week\|month\|all]` | an item's price history as a chart, by name or ID |
+| `/flipscout player <name>` | a player's auctions: up for sale now and the last ones they created |
+| `/flipscout search <name> [max:<price>]` | the cheapest BIN auctions of an item, e.g. `search hyperion max:900m` |
+| `/flipscout museum [n]` | the cheapest museum experience: items and whole armor sets, by coins per XP |
 | `/flipscout open` | opens the latest notification, or tells you it was already bought (Forge also has a key for it in *Controls → FlipScout*) |
 | `/flipscout profits` | how much you made: session, today, total |
 | `/flipscout session [pause\|resume\|reset\|history]` | the session: details, pause, resume, reset (the old one goes to the history) |
 | `/flipscout total [reset]` | total and the last 7 days; `total reset confirm` clears it |
-| `/flipscout flips` | the last 10 closed flips: bought, sold, profit |
+| `/flipscout flips [page]` | closed flips (up to 1000): bought, sold, profit |
+| `/flipscout export [flips\|notifications\|bazaar]` | saves them as CSV (the bazaar as JSON) in `config/flipscout/exports` |
 | `/flipscout stock [clear]` | things you bought and have not resold yet, and sales to collect |
 | `/flipscout discord [test]` | Discord report status; `test` sends a test message to the channel |
 | `/flipscout coop` | the members of your coop the mod has recognized |
 | `/flipscout set <key> <value>` | changes a setting, e.g. `set ah.minProfit 2m`; without a value it empties a text field |
 | `/flipscout config [filter]` | shows the settings (click one to change it) |
-| `/flipscout blacklist add\|remove\|list [ID]` | items to ignore, e.g. `blacklist add HYPERION` |
+| `/flipscout blacklist add\|remove\|list [ID\|player:NAME]` | items or sellers to ignore, e.g. `blacklist add HYPERION`, `blacklist add player:Someone` |
 | `/flipscout status` | the state of each data source and any errors |
+| `/flipscout credits` | who made the mod and where its data comes from |
 | `/flipscout reload` | reloads the settings file |
 | `/flipscout test` | shows a test notification |
 
@@ -120,7 +141,8 @@ on every push.
 The easiest way is the **menu**: `/flipscout gui`, the *Config* button in the mod list (Forge), or a key you can bind
 in *Controls → FlipScout* (Forge).
 
-- **Sections on the left:** General, Auctions (BIN), Bazaar, Profits, Discord, Data sources. **At the top**, a search over the
+- **Sections on the left:** General, Auctions (BIN), Tooltips, Bazaar, Profits, Discord, Other flips (SkyCofl), Mayors,
+  Data sources. **At the top**, a search over the
   names and descriptions of every setting.
 - **ON/OFF switches**, choices that change on click (the strategy) and **fields** for numbers and amounts (`500k`,
   `2m`): an invalid value turns red and the reason shows at the bottom; it is not applied until you fix it.
@@ -138,6 +160,7 @@ They also live in `config/flipscout/flipscout.properties` (every entry is commen
 | `sound` | `on` | a sound with each notification |
 | `blacklist` | empty | IDs to ignore, comma-separated |
 | `blockedSummary` | `on` | after each round of auctions, says how many flips the blacklist hid |
+| `chat.prefixColor` / `chat.profitColor` | `gold` / `dark_green` | colours of the `[FlipScout]` tag and of profits |
 | `ah.minProfit` | `500k` | minimum profit after taxes |
 | `ah.minPercent` | `5` | minimum profit as a % of the price |
 | `ah.minVolume` | `1` | minimum sales per day (when known) |
@@ -147,13 +170,29 @@ They also live in `config/flipscout/flipscout.properties` (every entry is commen
 | `ah.upgradePercent` | `80` | how much of the upgrades' value to count, in % |
 | `ah.fullScanMinutes` | `30` | how often to download every auction again |
 | `ah.pollPages` | `2` | pages of new auctions checked every minute |
+| `whitelist` | empty | IDs notified whenever they are a flip at all, whatever the minimum profit, percentage and sales |
+| `ah.itemMinProfit` | empty | own minimum profit for some items, e.g. `HYPERION=20m,JUJU_SHORTBOW=1m` |
+| `ah.minPrice` | `0` | ignores auctions cheaper than this |
+| `ah.npc.enabled` / `ah.npc.minProfit` | `on` / `100k` | auction → NPC flips |
+| `tooltip.enabled` / `tooltip.lowballPercent` | `on` / `85` | value and lowball price in item tooltips |
 | `bz.intervalSeconds` | `20` | how often to check the bazaar |
 | `bz.flip.minMarginPercent` | `5` | minimum margin of order flips |
 | `bz.flip.minProfitPerHour` | `1m` | minimum potential profit per hour |
 | `bz.crash.dropPercent` | `20` | minimum drop to report a crash |
 | `bz.crash.minProfit` | `500k` | minimum estimated profit of a crash |
 | `bz.npc.minProfit` | `200k` | minimum profit of a bazaar → NPC flip |
-| `source.coflnet` | `on` | uses Coflnet data (sales of rare items, volumes, bazaar names) |
+| `other.<kind>.notify` | `on` | alerts for Kat, Craft, Forge, Fusion, NPC and Book flips, one switch each |
+| `other.kat.minProfit` | `5m` | minimum profit of a Kat flip |
+| `other.craft.minProfit` / `other.craft.minVolume` | `2m` / `5` | minimum profit and sales a day of a craft |
+| `other.forge.minProfitPerHour` | `1m` | minimum profit per hour of forging |
+| `other.forge.hotm` | `0` | your Heart of the Mountain level: hides the forges you cannot do (0 = show all) |
+| `other.fusion.minProfit` | `200k` | minimum profit of a shard fusion |
+| `other.npc.minProfit` / `other.npc.minVolume` | `1m` / `1` | minimum profit and sales a day of an NPC flip |
+| `other.books.minProfit` | `500k` | minimum profit of a book combination |
+| `other.refreshMinutes` / `other.cooldownHours` | `5` / `6` | how often the lists are read, and when the same flip may be alerted again |
+| `mayor.notify` | `on` | the election alert (and the analysis behind it) |
+| `mayor.items` / `mayor.minChange` | `80` / `8` | items the mayor analysis reads, and the smallest change worth showing (%) |
+| `source.coflnet` | `on` | uses SkyCofl data (sales of rare items, volumes, bazaar names, the lists, history, mayors) |
 | `tracker.enabled` | `on` | recognizes purchases and sales in chat and counts your profits |
 | `tracker.messages` | `on` | says in chat when it records an auction purchase or closes a flip |
 | `discord.webhook` | empty | Discord channel webhook for trade reports (see below) |
@@ -260,6 +299,63 @@ never notified as flips (buying them back would only cost the taxes), and in `/f
 member is marked with their name instead of as sold to someone else. The profit tracker stays personal: everyone sees
 their own purchases and sales.
 
+## Other flips (SkyCofl)
+
+Some flips need recipes and costs Hypixel does not publish. FlipScout takes them from SkyCofl's free API and prices each
+one again with live data: ingredients and results on the bazaar at their current instant prices, auction items with the
+fees and your valuation strategy, Kat flips only while their auction is still listed (at its current price).
+
+| Command | Flip |
+|---|---|
+| `/flipscout kat` | buy a pet, upgrade its rarity at Kat, sell it (cost of Kat and materials, upgrade time, profit per hour); click opens the auction |
+| `/flipscout craft` | craft an item from bazaar ingredients and sell it; the hover lists the ingredients and the collection it needs; click types `/viewrecipe` |
+| `/flipscout forge` | forge an item in the Dwarven Mines (time, profit per hour, HotM level needed). Set your level with `other.forge.hotm` to hide the forges you cannot do |
+| `/flipscout fusion` | fuse shards in the Fusion Machine |
+| `/flipscout npc` | buy from an NPC (coins and items) and resell |
+| `/flipscout books` | combine enchanted books in an anvil (two per level) |
+| `/flipscout lowsupply` | items with few auctions listed, most traded first |
+
+Each kind can also alert you in chat (`other.<kind>.notify`, on by default, each with its own thresholds). After joining,
+the first read of each list only sums up in one line how many flips are above your thresholds; afterwards new ones are
+alerted, at most three per list each time, and the same flip again only after `other.cooldownHours`.
+
+## Mayors and elections
+
+`/flipscout mayor` shows the mayor and minister with their perks, when the next mayor takes office, and the open
+election with each candidate's share of the votes. For the **favourite** (and for the mayor in office) it lists the items
+that usually rise or fall during their term.
+
+How: for about 80 of the most traded bazaar products and auction items, the mod reads a year of daily prices and a year of
+election results (SkyCofl), and compares the price during each term with the ten days around it, so long trends do not
+count as a mayor's effect. The effect is the median over that mayor's terms, kept when most terms agree (e.g. `+15%
+(2/2 terms)`). This runs in the background every three days (one request every 1.2 seconds, about two minutes) and is
+saved in `config/flipscout/mayor.json`. It shows a tendency, not a promise.
+
+With `mayor.notify` on, once per election, when a candidate is clearly ahead, a chat line names the items that usually
+move under them.
+
+## History, players, search and the museum
+
+- `/flipscout history <item> [day|week|month|all]`: the price history as a bar chart in chat (hover a bar for its date,
+  average, lowest and highest price and sales), plus now, average, lowest, highest and change. Bazaar products show the
+  instant-buy price.
+- `/flipscout player <name>`: the player's BIN auctions up for sale now (from the mod's own copy of the auction house)
+  and the last auctions they created with what they sold for (SkyCofl). `/flipscout blacklist add player:<name>` stops
+  their auctions from ever being notified.
+- `/flipscout search <name> [max:<price>]`: the cheapest BIN auctions whose name contains every word.
+- `/flipscout museum`: the cheapest museum experience, items and whole armor sets (each piece at its cheapest), by
+  coins per XP. The mod cannot know what you already donated.
+- `/flipscout export`: the closed flips or the notifications as CSV, or the bazaar as JSON, for spreadsheets.
+
+## Credits
+
+Made by **yrqs** and **baldih**. `/flipscout credits` lists the sources in game.
+
+- **Hypixel public API**: auctions, sold auctions, bazaar, item list (with museum data), elections.
+- **SkyCofl API** ([sky.coflnet.com](https://sky.coflnet.com)): Kat, Craft, Forge, Fusion, NPC and Book flips, low
+  supply items, price and bazaar history, past mayors, player auctions, sales prices and item names.
+- **Mojang API**: player names and UUIDs.
+
 ## Privacy and network use
 
 FlipScout only talks to these services, and only for what is listed:
@@ -267,13 +363,14 @@ FlipScout only talks to these services, and only for what is listed:
 | Service | What for | What it sends |
 |---|---|---|
 | `api.hypixel.net` | auctions, sold auctions, bazaar, item list | nothing about you (public endpoints, no API key) |
-| `sky.coflnet.com` | prices, sales volumes and names of items | item IDs |
+| `sky.coflnet.com` | prices, sales volumes and names of items; the flip lists; price history; past mayors; a player's auctions when you ask | item IDs; the UUID of a player you look up |
 | `sessionserver.mojang.com` | the names of your coop members | their public UUIDs, taken from auctions |
+| `api.mojang.com` | the UUID of a player you look up or blacklist (`/flipscout player`, `player:NAME`) | that player's name |
 | your Discord webhook | trade reports, only if you set one | your Minecraft name, the item, prices and profit; Discord loads your head from `mc-heads.net` and the item picture from Coflnet |
 
 There is no analytics or telemetry, and nothing is sent to the author. Everything the mod saves stays in
-`config/flipscout/` on your PC: `flipscout.properties` (settings), `profits.json` (profits) and `sales.bin` (sales
-history). Network use is a few MB a minute, mostly for the full auction scan (the checks every half second only read the
+`config/flipscout/` on your PC: `flipscout.properties` (settings), `profits.json` (profits), `sales.bin` (sales
+history), `mayor.json` (the mayor analysis) and `exports/` (files you export). Network use is a few MB a minute, mostly for the full auction scan (the checks every half second only read the
 start of the response). To lower it, raise `ah.fullScanMinutes` and `bz.intervalSeconds`, or set `ah.pollPages` to 1.
 
 ## Good to know
@@ -293,8 +390,8 @@ FlipScout is **All Rights Reserved** (see `LICENSE`): you can upload the officia
 redistribute or modify them. To publish it:
 
 1. **Build the jars**: push to GitHub and download the artifacts of the **Build** run (all 8 jobs must be green), or
-   build them yourself as above. Upload the jar named like `flipscout-fabric-1.21.8-1.3.0.jar` or
-   `flipscout-forge-1.8.9-1.3.0.jar` (not one ending in `-sources` or `-dev`, if present).
+   build them yourself as above. Upload the jar named like `flipscout-fabric-1.21.8-1.4.0.jar` or
+   `flipscout-forge-1.8.9-1.4.0.jar` (not one ending in `-sources` or `-dev`, if present).
 2. **Create the project** on [modrinth.com](https://modrinth.com) → *Create a project*: type **Mod**, name
    **FlipScout**, URL `flipscout`, summary e.g. *"Flip notifier for Hypixel SkyBlock: underpriced BIN auctions and bazaar
    deals in chat, with a profit tracker. Never buys anything by itself."*
@@ -310,16 +407,16 @@ redistribute or modify them. To publish it:
 
    | Jar | Loader | Game versions | Dependency |
    |---|---|---|---|
-   | `flipscout-forge-1.8.9-1.3.0.jar` | Forge | 1.8.9 | none |
-   | `flipscout-fabric-1.21.8-1.3.0.jar` | Fabric | 1.21.7, 1.21.8 | Fabric API (required) |
-   | `flipscout-fabric-1.21.10-1.3.0.jar` | Fabric | 1.21.9, 1.21.10 | Fabric API (required) |
-   | `flipscout-fabric-1.21.11-1.3.0.jar` | Fabric | 1.21.11 | Fabric API (required) |
-   | `flipscout-fabric-26.1.2-1.3.0.jar` | Fabric | 26.1.x | Fabric API (required) |
-   | `flipscout-fabric-26.2-1.3.0.jar` | Fabric | 26.2.x | Fabric API (required) |
-   | `flipscout-fabric-26.3-1.3.0.jar` | Fabric | 26.3.x | Fabric API (required) |
+   | `flipscout-forge-1.8.9-1.4.0.jar` | Forge | 1.8.9 | none |
+   | `flipscout-fabric-1.21.8-1.4.0.jar` | Fabric | 1.21.7, 1.21.8 | Fabric API (required) |
+   | `flipscout-fabric-1.21.10-1.4.0.jar` | Fabric | 1.21.9, 1.21.10 | Fabric API (required) |
+   | `flipscout-fabric-1.21.11-1.4.0.jar` | Fabric | 1.21.11 | Fabric API (required) |
+   | `flipscout-fabric-26.1.2-1.4.0.jar` | Fabric | 26.1.x | Fabric API (required) |
+   | `flipscout-fabric-26.2-1.4.0.jar` | Fabric | 26.2.x | Fabric API (required) |
+   | `flipscout-fabric-26.3-1.4.0.jar` | Fabric | 26.3.x | Fabric API (required) |
 
-   Give each a version number like `1.3.0+fabric-1.21.8` or `1.3.0+forge-1.8.9`, channel **Release**, and paste the
-   changes into the changelog.
+   Give each a version number like `1.4.0+fabric-1.21.8` or `1.4.0+forge-1.8.9`, channel **Release**, and paste the
+   version's section of `CHANGELOG.md` into the changelog.
 5. **Submit for review.** Modrinth's moderators check new projects before they go public, which can take a few days.
 
 For a new release: raise the version in `core/build.gradle.kts`, `FlipScout.VERSION` and the three `gradle.properties`
