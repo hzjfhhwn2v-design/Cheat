@@ -32,11 +32,12 @@ public final class OpportunityText {
         if (o.command != null) {
             line.append(" §b§l[").append(o.button).append(']');
         }
-        String hover = hover(o);
+        String text = Msg.profits(line.toString());
+        String hover = Msg.profits(hover(o));
         if (o.command == null) {
-            return new Msg().add(line.toString(), hover);
+            return new Msg().add(text, hover);
         }
-        return o.suggest ? new Msg().suggest(line.toString(), o.command, hover) : new Msg().run(line.toString(), o.command, hover);
+        return o.suggest ? new Msg().suggest(text, o.command, hover) : new Msg().run(text, o.command, hover);
     }
 
     static String hover(Opportunity o) {

@@ -58,6 +58,21 @@ public final class TestData {
         return itemBytes(map("id", "ENCHANTED_BOOK", "enchantments", map(enchant, level)), null, 1);
     }
 
+    /** Uncompressed NBT of a root compound, as the game writes an item's custom data. */
+    public static byte[] rawNbt(Map<String, Object> root) {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(10);
+            out.writeUTF("");
+            writeCompound(out, root);
+            out.close();
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public static String encode(Map<String, Object> root) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();

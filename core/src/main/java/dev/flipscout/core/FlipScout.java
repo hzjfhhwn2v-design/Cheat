@@ -91,6 +91,30 @@ public final class FlipScout {
         return commands.complete(args);
     }
 
+    /**
+     * Lines to add to a SkyBlock item's tooltip (its value and a lowball price). {@code nbt} is the
+     * item's custom data written as uncompressed NBT: the ExtraAttributes compound, or a compound
+     * holding it. Never throws; empty when there is nothing to say.
+     */
+    public List<String> tooltip(byte[] nbt, String name, int count) {
+        if (nbt == null || nbt.length == 0 || !config.tooltipEnabled) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            String cacheKey = java.util.Arrays.hashCode(nbt) + ":" + nbt.length + ":" + count + ":" + name;
+            List<String> cached = engine.cachedTooltip(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            java.util.Map<String, Object> root = dev.flipscout.core.nbt.NbtReader.readRoot(
+                new java.io.DataInputStream(new java.io.ByteArrayInputStream(nbt)));
+            java.util.Map<String, Object> extra = dev.flipscout.core.nbt.NbtReader.compound(root.get("ExtraAttributes"));
+            return engine.tooltip(extra.isEmpty() ? root : extra, name, count, cacheKey);
+        } catch (java.io.IOException | RuntimeException e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
     /** Opens the most recent notification (for a key binding). */
     public void openLast() {
         commands.open();

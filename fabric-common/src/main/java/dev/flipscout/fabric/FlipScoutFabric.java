@@ -15,8 +15,10 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +55,11 @@ public final class FlipScoutFabric implements ClientModInitializer {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay) {
                 flipScout.onChat(message.getString());
+            }
+        });
+        ItemTooltipCallback.EVENT.register((stack, context, type, lines) -> {
+            for (String line : Tooltips.lines(flipScout, stack)) {
+                lines.add(Component.literal(line));
             }
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> flipScout.stop());

@@ -4,9 +4,13 @@ import dev.flipscout.core.FlipScout;
 import dev.flipscout.core.Log;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.CompressedStreamTools;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -16,6 +20,10 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.input.Keyboard;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 
 @Mod(modid = FlipScout.MOD_ID, name = "FlipScout", version = FlipScout.VERSION, clientSideOnly = true,
     acceptedMinecraftVersions = "[1.8.9]", guiFactory = "dev.flipscout.forge.FlipScoutGuiFactory")
@@ -68,6 +76,26 @@ public class FlipScoutForge {
         // Type 2 is the action bar above the hotbar, never a purchase or a sale.
         if (event.type != 2 && event.message != null) {
             flipScout.onChat(event.message.getUnformattedText());
+        }
+    }
+
+    /** The item's value and a lowball price under SkyBlock items' tooltips. */
+    @SubscribeEvent
+    public void onTooltip(ItemTooltipEvent event) {
+        ItemStack stack = event.itemStack;
+        if (stack == null || !stack.hasTagCompound()) {
+            return;
+        }
+        NBTTagCompound extra = stack.getTagCompound().getCompoundTag("ExtraAttributes");
+        if (extra.hasNoTags()) {
+            return;
+        }
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            CompressedStreamTools.write(extra, new DataOutputStream(bytes));
+            event.toolTip.addAll(flipScout.tooltip(bytes.toByteArray(), stack.getDisplayName(), stack.stackSize));
+        } catch (IOException | RuntimeException e) {
+            // A tooltip must never break.
         }
     }
 

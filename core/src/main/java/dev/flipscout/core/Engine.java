@@ -31,6 +31,10 @@ import dev.flipscout.core.market.BazaarHistory;
 import dev.flipscout.core.market.CoflnetSource;
 import dev.flipscout.core.market.PriceService;
 import dev.flipscout.core.market.SalesHistory;
+import dev.flipscout.core.market.Valuation;
+import dev.flipscout.core.flip.Fees;
+import dev.flipscout.core.item.Upgrades;
+import dev.flipscout.core.util.Coins;
 import dev.flipscout.core.util.Text;
 
 import java.io.File;
@@ -95,6 +99,25 @@ public final class Engine {
 
     /** Who bought a notified auction. */
     public enum Buyer { YOU, COOP, SOMEONE_ELSE }
+
+    /** An auction that looked like a flip at first sight but was turned down, and why. */
+    public static final class Rejection {
+        public final long time;
+        public final AuctionIndex.Listing listing;
+        public final String reason;
+        public final double profit;
+        public final double percent;
+
+        Rejection(long time, AuctionIndex.Listing listing, String reason, double profit, double percent) {
+            this.time = time;
+            this.listing = listing;
+            this.reason = reason;
+            this.profit = profit;
+            this.percent = percent;
+        }
+    }
+
+    private static final int MAX_REJECTED = 50;
 
     /** A notification kept for /flipscout recent and /flipscout open. */
     public static final class Notification {
@@ -226,6 +249,8 @@ public final class Engine {
     private final Map<String, ItemKey> canonicalKeys = new ConcurrentHashMap<String, ItemKey>();
     /** Guarded by itself: read by commands on other threads. */
     private final Deque<Notification> recent = new ArrayDeque<Notification>();
+    /** Guarded by itself. */
+    private final Deque<Rejection> rejected = new ArrayDeque<Rejection>();
 
     private volatile ItemCatalog items = ItemCatalog.EMPTY;
     private volatile boolean initialScanDone;
@@ -739,15 +764,17 @@ public final class Engine {
             blockedBy = blockedSeller(listing.seller);
         }
         if (blockedBy != null) {
-            if (config.blockedSummary) {
-                AuctionFlip hidden = auctionFinder.evaluateBlacklisted(listing);
-                if (hidden != null) {
+            AuctionFlip hidden = auctionFinder.evaluateBlacklisted(listing);
+            if (hidden != null) {
+                if (config.blockedSummary) {
                     blocked.add(notifier.blockedLine(hidden, blockedBy), hidden.profit);
                 }
+                reject(listing, "blacklist (" + blockedBy + ")", hidden.profit, hidden.percent);
             }
             return;
         }
-        AuctionFlip flip = auctionFinder.evaluate(listing, false);
+        AuctionFlipFinder.Verdict verdict = auctionFinder.assess(listing, false);
+        AuctionFlip flip = verdict.flip;
         // A flip backed by two prices and a known sales volume goes out at once. One resting on a
         // single price, without a volume, or not a flip on local data alone, is first checked
         // against Coflnet when that could add the missing data: in the background, so the round
@@ -758,7 +785,55 @@ public final class Engine {
             confirm(listing);
         } else if (flip != null) {
             notifyAuction(flip);
+        } else {
+            turnedDown(listing, verdict);
         }
+    }
+
+    /** Not a flip: keep the reason when it looked like one, and try selling it to an NPC. */
+    private void turnedDown(AuctionIndex.Listing listing, AuctionFlipFinder.Verdict verdict) {
+        if (verdict.reason != null && verdict.profit > 0) {
+            reject(listing, verdict.reason, verdict.profit, verdict.percent);
+        }
+        if (config.ahNpcEnabled) {
+            considerNpc(listing);
+        }
+    }
+
+    private void reject(AuctionIndex.Listing listing, String reason, double profit, double percent) {
+        synchronized (rejected) {
+            rejected.addFirst(new Rejection(clock.getAsLong(), listing, reason, profit, percent));
+            while (rejected.size() > MAX_REJECTED) {
+                rejected.removeLast();
+            }
+        }
+    }
+
+    /** The auctions turned down lately, newest first. */
+    public List<Rejection> rejected() {
+        synchronized (rejected) {
+            return new ArrayList<Rejection>(rejected);
+        }
+    }
+
+    /** An auction cheaper than what an NPC pays for the item: a sure profit, no taxes. */
+    private void considerNpc(AuctionIndex.Listing listing) {
+        ItemCatalog.Info info = items.get(listing.key.id);
+        if (info == null || !(info.npcSellPrice > 0) || (config.budget > 0 && listing.price > config.budget)) {
+            return;
+        }
+        double value = info.npcSellPrice * listing.count;
+        double profit = value - listing.price;
+        if (profit < Math.max(1, config.ahNpcMinProfit)) {
+            return;
+        }
+        Valuation valuation = new Valuation();
+        valuation.value = info.npcSellPrice;
+        valuation.references = 2;
+        AuctionFlip flip = new AuctionFlip(listing, valuation, value, 0, profit,
+            listing.price > 0 ? profit * 100.0 / listing.price : Double.POSITIVE_INFINITY, false);
+        status.auctionNotifications.incrementAndGet();
+        deliver(notifier.npcAuction(flip), clock.getAsLong(), flip);
     }
 
     private void confirm(final AuctionIndex.Listing listing) {
@@ -767,9 +842,11 @@ public final class Engine {
             @Override
             public void run() {
                 try {
-                    AuctionFlip flip = auctionFinder.evaluate(listing, true);
-                    if (flip != null) {
-                        notifyAuction(flip);
+                    AuctionFlipFinder.Verdict verdict = auctionFinder.assess(listing, true);
+                    if (verdict.flip != null) {
+                        notifyAuction(verdict.flip);
+                    } else {
+                        turnedDown(listing, verdict);
                     }
                 } finally {
                     pendingConfirmations.decrementAndGet();
@@ -1161,6 +1238,176 @@ public final class Engine {
 
     public Players players() {
         return players;
+    }
+
+    // ---- Item tooltips ----
+
+    private static final long TOOLTIP_TTL_MS = 10_000L;
+    private final Map<String, Object[]> tooltipCache = new ConcurrentHashMap<String, Object[]>();
+
+    /**
+     * Lines for an item's tooltip: what it resells for and a lowball price. {@code extra} is the
+     * item's ExtraAttributes; empty when it is not a SkyBlock item or the setting is off.
+     */
+    public List<String> tooltip(Map<String, Object> extra, String name, int count, String cacheKey) {
+        if (!config.tooltipEnabled) {
+            return Collections.emptyList();
+        }
+        long now = clock.getAsLong();
+        Object[] cached = cacheKey == null ? null : tooltipCache.get(cacheKey);
+        if (cached != null && now - (Long) cached[0] < TOOLTIP_TTL_MS) {
+            @SuppressWarnings("unchecked")
+            List<String> lines = (List<String>) cached[1];
+            return lines;
+        }
+        List<String> lines = tooltipLines(extra, Text.stripCodes(name), Math.max(1, count));
+        if (cacheKey != null) {
+            if (tooltipCache.size() > 500) {
+                tooltipCache.clear();
+            }
+            tooltipCache.put(cacheKey, new Object[] {now, lines});
+        }
+        return lines;
+    }
+
+    /** The lines computed for this cache key in the last few seconds, or null. */
+    List<String> cachedTooltip(String cacheKey) {
+        Object[] cached = tooltipCache.get(cacheKey);
+        if (cached != null && clock.getAsLong() - (Long) cached[0] < TOOLTIP_TTL_MS) {
+            @SuppressWarnings("unchecked")
+            List<String> lines = (List<String>) cached[1];
+            return lines;
+        }
+        return null;
+    }
+
+    private List<String> tooltipLines(Map<String, Object> extra, String name, int count) {
+        ItemKey key = ItemKeys.fromExtraAttributes(extra, name);
+        if (key == null) {
+            return Collections.emptyList();
+        }
+        List<String> lines = new ArrayList<String>();
+        BazaarProduct product = key.bazaarId != null ? market.bazaar(key.bazaarId) : null;
+        if (product != null && product.instaSell() > 0) {
+            double sell = product.instaSell() * count;
+            lines.add("§6FlipScout: §fbazaar pays §a" + Coins.compact(sell - Fees.bazaarSellTax(sell, config))
+                + " §8after tax" + (product.instaBuy() > 0 ? " §7(buy: §6" + Coins.compact(product.instaBuy() * count) + "§7)" : ""));
+            return lines;
+        }
+        Valuation v = prices.valuate(key, null, Double.NaN, false);
+        if (count == 1 && config.ahUpgrades && !v.bazaar) {
+            Upgrades upgrades = ItemKeys.upgrades(key.id, extra);
+            if (upgrades != null) {
+                prices.addUpgrades(v, new AuctionIndex.Listing("tooltip", null, name, null, key, 0, 1, 0, 0, 0, 0, upgrades),
+                    config.ahUpgradePercent / 100.0);
+            }
+        }
+        if (!(v.value > 0)) {
+            ItemCatalog.Info info = items.get(key.id);
+            if (info != null && info.npcSellPrice > 0) {
+                lines.add("§6FlipScout: §fan NPC pays §a" + Coins.compact(info.npcSellPrice * count));
+            } else {
+                lines.add("§6FlipScout: §8no price data for this item yet");
+            }
+            return lines;
+        }
+        double value = v.value * count;
+        double net = value - Fees.auctionSellFees(value, config);
+        StringBuilder sources = new StringBuilder();
+        if (!Double.isNaN(v.lbinOther)) {
+            sources.append("lowest BIN ").append(Coins.compact(v.lbinOther * count));
+        }
+        if (!Double.isNaN(v.salesReference())) {
+            sources.append(sources.length() > 0 ? ", " : "").append("sales ").append(Coins.compact(v.salesReference() * count));
+        }
+        if (!Double.isNaN(v.volumePerDay)) {
+            sources.append(sources.length() > 0 ? ", " : "").append(Coins.decimal(v.volumePerDay, v.volumePerDay < 10 ? 1 : 0))
+                .append("/day");
+        }
+        lines.add("§6FlipScout: §fworth §a" + Coins.compact(value) + (sources.length() > 0 ? " §8(" + sources + ")" : ""));
+        if (v.upgradeExtra != 0) {
+            lines.add("§7  upgrades counted: " + (v.upgradeExtra > 0 ? "§b+" : "§c") + Coins.compact(v.upgradeExtra));
+        }
+        int percent = config.tooltipLowballPercent;
+        lines.add("§7  Lowball: §e" + Coins.compact(net * percent / 100.0) + " §8(" + percent + "% of " + Coins.compact(net)
+            + " after fees)");
+        return lines;
+    }
+
+    // ---- Museum ----
+
+    /** A museum donation and the cheapest way to make it. */
+    public static final class Donation {
+        public final String name;
+        public final int xp;
+        public final double price;
+        /** Command to buy it (bazaar or auction), or null for a set. */
+        public final String command;
+        public final boolean set;
+
+        Donation(String name, int xp, double price, String command, boolean set) {
+            this.name = name;
+            this.xp = xp;
+            this.price = price;
+            this.command = command;
+            this.set = set;
+        }
+
+        public double perXp() {
+            return price / xp;
+        }
+    }
+
+    /** The cheapest museum experience: single items and whole armor sets, fewest coins per XP first. */
+    public List<Donation> cheapestDonations(int limit) {
+        List<Donation> out = new ArrayList<Donation>();
+        Map<String, double[]> sets = new HashMap<String, double[]>();
+        Map<String, Boolean> setComplete = new HashMap<String, Boolean>();
+        for (String id : items.ids()) {
+            ItemCatalog.Info info = items.get(id);
+            if (info == null || (info.museumXp <= 0 && info.museumSet == null)) {
+                continue;
+            }
+            Object[] cheapest = cheapest(id);
+            if (info.museumXp > 0 && cheapest != null) {
+                out.add(new Donation(items.displayName(id), info.museumXp, (Double) cheapest[0], (String) cheapest[1], false));
+            }
+            if (info.museumSet != null && info.museumSetXp > 0) {
+                double[] total = sets.get(info.museumSet);
+                if (total == null) {
+                    total = new double[] {0, info.museumSetXp};
+                    sets.put(info.museumSet, total);
+                    setComplete.put(info.museumSet, Boolean.TRUE);
+                }
+                if (cheapest == null) {
+                    setComplete.put(info.museumSet, Boolean.FALSE);
+                } else {
+                    total[0] += (Double) cheapest[0];
+                }
+            }
+        }
+        for (Map.Entry<String, double[]> set : sets.entrySet()) {
+            if (setComplete.get(set.getKey()) && set.getValue()[0] > 0) {
+                out.add(new Donation(Text.titleCase(set.getKey()) + " set", (int) set.getValue()[1], set.getValue()[0], null, true));
+            }
+        }
+        Collections.sort(out, new Comparator<Donation>() {
+            @Override
+            public int compare(Donation a, Donation b) {
+                return Double.compare(a.perXp(), b.perXp());
+            }
+        });
+        return out.size() > limit ? new ArrayList<Donation>(out.subList(0, limit)) : out;
+    }
+
+    /** The cheapest price of an item and the command to buy it, or null when none is for sale. */
+    private Object[] cheapest(String id) {
+        BazaarProduct product = market.bazaar(id);
+        if (product != null && product.instaBuy() > 0) {
+            return new Object[] {product.instaBuy(), "/bz " + items.bazaarSearch(id)};
+        }
+        AuctionIndex.Listing listing = index.lowest(id, null);
+        return listing == null ? null : new Object[] {listing.unitPrice, "/viewauction " + listing.uuid};
     }
 
     public History history() {

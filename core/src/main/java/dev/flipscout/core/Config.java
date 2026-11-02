@@ -17,8 +17,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -33,6 +35,8 @@ public final class Config {
     public volatile long budget = 0;
     public volatile Set<String> blacklist = Collections.emptySet();
     public volatile boolean blockedSummary = true;
+    public volatile String chatPrefixColor = "gold";
+    public volatile String chatProfitColor = "dark_green";
     public volatile boolean debug = false;
 
     // Auction house (BIN)
@@ -52,6 +56,15 @@ public final class Config {
     public volatile double ahFeeOver100m = 2.5;
     public volatile double ahFeeClaim = 1.0;
     public volatile int salesWindowDays = 3;
+    public volatile Set<String> whitelist = Collections.emptySet();
+    public volatile Map<String, Long> ahItemMinProfit = Collections.emptyMap();
+    public volatile long ahMinPrice = 0;
+    public volatile boolean ahNpcEnabled = true;
+    public volatile long ahNpcMinProfit = 100_000;
+
+    // Tooltips
+    public volatile boolean tooltipEnabled = true;
+    public volatile int tooltipLowballPercent = 85;
 
     // Bazaar
     public volatile boolean bzEnabled = true;
@@ -192,6 +205,16 @@ public final class Config {
                 boolean read(Config c) { return c.blockedSummary; }
                 void write(Config c, boolean v) { c.blockedSummary = v; }
             },
+            new ChoiceSetting("chat.prefixColor", "Chat colour: [FlipScout]", "Colour of the [FlipScout] tag in chat",
+                Msg.COLOR_NAMES) {
+                String read(Config c) { return c.chatPrefixColor; }
+                void write(Config c, String v) { c.chatPrefixColor = v; Msg.useColors(v, c.chatProfitColor); }
+            },
+            new ChoiceSetting("chat.profitColor", "Chat colour: profit", "Colour of the profit in flip notifications",
+                Msg.COLOR_NAMES) {
+                String read(Config c) { return c.chatProfitColor; }
+                void write(Config c, String v) { c.chatProfitColor = v; Msg.useColors(c.chatPrefixColor, v); }
+            },
             new BoolSetting("debug", "Verbose log (debug)", "Writes more detail to the game log") {
                 boolean read(Config c) { return c.debug; }
                 void write(Config c, boolean v) { c.debug = v; Log.debugEnabled = v; }
@@ -262,6 +285,39 @@ public final class Config {
             new IntSetting("ah.salesWindowDays", "Days of sales history", "Days of sales to keep for statistics", 1, 14) {
                 int read(Config c) { return c.salesWindowDays; }
                 void write(Config c, int v) { c.salesWindowDays = v; }
+            },
+            new ListSetting("whitelist", "Always notified items", "Item IDs notified whenever they are a flip at all, whatever the"
+                + " minimum profit, percentage and sales (e.g. HYPERION,TERMINATOR)") {
+                Set<String> read(Config c) { return c.whitelist; }
+                void write(Config c, Set<String> v) { c.whitelist = v; }
+            },
+            new ItemCoinsSetting("ah.itemMinProfit", "Minimum profit per item", "Own minimum profit for some items, e.g."
+                + " HYPERION=20m,JUJU_SHORTBOW=1m") {
+                Map<String, Long> read(Config c) { return c.ahItemMinProfit; }
+                void write(Config c, Map<String, Long> v) { c.ahItemMinProfit = v; }
+            },
+            new CoinsSetting("ah.minPrice", "Minimum auction price", "Ignore auctions cheaper than this (0 = none)", 0) {
+                long read(Config c) { return c.ahMinPrice; }
+                void write(Config c, long v) { c.ahMinPrice = v; }
+            },
+            new BoolSetting("ah.npc.enabled", "Auction → NPC flips", "Alert when an auction costs less than an NPC pays for it") {
+                boolean read(Config c) { return c.ahNpcEnabled; }
+                void write(Config c, boolean v) { c.ahNpcEnabled = v; }
+            },
+            new CoinsSetting("ah.npc.minProfit", "Auction → NPC: minimum profit", "Minimum profit selling the item to an NPC", 0) {
+                long read(Config c) { return c.ahNpcMinProfit; }
+                void write(Config c, long v) { c.ahNpcMinProfit = v; }
+            }),
+        new Section("Tooltips",
+            new BoolSetting("tooltip.enabled", "Price in item tooltips", "Shows the estimated value of SkyBlock items when you"
+                + " hover them, with a lowball price") {
+                boolean read(Config c) { return c.tooltipEnabled; }
+                void write(Config c, boolean v) { c.tooltipEnabled = v; }
+            },
+            new IntSetting("tooltip.lowballPercent", "Lowball: share of the value (%)", "Lowball price as a percentage of what"
+                + " the item resells for after fees", 30, 100) {
+                int read(Config c) { return c.tooltipLowballPercent; }
+                void write(Config c, int v) { c.tooltipLowballPercent = v; }
             }),
         new Section("Bazaar",
             new BoolSetting("bz.enabled", "Bazaar notifications", "Bazaar notifications") {
@@ -480,6 +536,26 @@ public final class Config {
             }
         }
         return null;
+    }
+
+    /** Whether one of {@code ids} is in the whitelist. */
+    public boolean isWhitelisted(String... ids) {
+        Set<String> list = whitelist;
+        if (list.isEmpty()) {
+            return false;
+        }
+        for (String id : ids) {
+            if (id != null && list.contains(id.toUpperCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The minimum profit for an item: its own one when set, else the general one. */
+    public long minProfitFor(String id) {
+        Long own = id == null ? null : ahItemMinProfit.get(id.toUpperCase(Locale.ROOT));
+        return own != null ? own : ahMinProfit;
     }
 
     public boolean isBlacklisted(String... ids) {
@@ -866,6 +942,57 @@ public final class Config {
                 throw new IllegalArgumentException("a Discord webhook URL is required (https://discord.com/api/webhooks/...)");
             }
             write(config, v.endsWith("/") ? v.substring(0, v.length() - 1) : v);
+        }
+    }
+
+    /** "ID=amount" pairs, comma-separated. */
+    abstract static class ItemCoinsSetting extends Setting {
+        ItemCoinsSetting(String key, String label, String help) {
+            super(key, label, help);
+        }
+
+        @Override
+        public Kind kind() {
+            return Kind.TEXT;
+        }
+
+        @Override
+        public String hint() {
+            return "ID=amount pairs, e.g. HYPERION=20m";
+        }
+
+        abstract Map<String, Long> read(Config c);
+
+        abstract void write(Config c, Map<String, Long> v);
+
+        @Override
+        public String get(Config config) {
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, Long> entry : read(config).entrySet()) {
+                sb.append(sb.length() > 0 ? "," : "").append(entry.getKey()).append('=')
+                    .append(ConfigEditor.shortCoins(entry.getValue()));
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public void set(Config config, String value) {
+            Map<String, Long> entries = new LinkedHashMap<String, Long>();
+            for (String part : value.split("[,\\s]+")) {
+                if (part.trim().isEmpty()) {
+                    continue;
+                }
+                int equals = part.indexOf('=');
+                if (equals <= 0) {
+                    throw new IllegalArgumentException("write ID=amount, e.g. HYPERION=20m");
+                }
+                try {
+                    entries.put(part.substring(0, equals).trim().toUpperCase(Locale.ROOT), Coins.parse(part.substring(equals + 1)));
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("not an amount: " + part.substring(equals + 1));
+                }
+            }
+            write(config, Collections.unmodifiableMap(entries));
         }
     }
 

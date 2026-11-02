@@ -186,6 +186,31 @@ public final class AuctionIndex {
         return out;
     }
 
+    /** Listings whose name contains every word, cheapest first, at most {@code limit}; {@code found[0]} gets the total. */
+    public synchronized List<Listing> search(List<String> words, long maxPrice, int limit, int[] found) {
+        List<Listing> out = new ArrayList<Listing>();
+        for (Listing listing : byUuid.values()) {
+            if (maxPrice > 0 && listing.price > maxPrice) {
+                continue;
+            }
+            String name = listing.itemName == null ? listing.key.id.toLowerCase(java.util.Locale.ROOT)
+                : dev.flipscout.core.util.Text.stripCodes(listing.itemName).toLowerCase(java.util.Locale.ROOT);
+            boolean all = true;
+            for (String word : words) {
+                if (!name.contains(word)) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) {
+                out.add(listing);
+            }
+        }
+        found[0] = out.size();
+        java.util.Collections.sort(out, BY_PRICE);
+        return out.size() > limit ? new ArrayList<Listing>(out.subList(0, limit)) : out;
+    }
+
     /** The listings of one seller (UUID, lowercase without dashes), most expensive first. */
     public synchronized List<Listing> bySeller(String seller) {
         List<Listing> out = new ArrayList<Listing>();

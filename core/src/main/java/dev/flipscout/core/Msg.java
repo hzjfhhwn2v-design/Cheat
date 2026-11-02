@@ -8,7 +8,35 @@ import java.util.List;
 
 /** Platform-neutral chat message: parts written with § colour codes, optionally clickable. */
 public final class Msg {
-    public static final String PREFIX = "§6[FlipScout]§r ";
+    /** Colours the player can pick for the tag and the profit (chat.prefixColor, chat.profitColor). */
+    public static final String[] COLOR_NAMES = {"gold", "yellow", "green", "dark_green", "aqua", "dark_aqua", "blue",
+        "light_purple", "dark_purple", "red", "dark_red", "white", "gray"};
+    private static final String[] COLOR_CODES = {"§6", "§e", "§a", "§2", "§b", "§3", "§9", "§d", "§5", "§c", "§4", "§f", "§7"};
+
+    /** "[FlipScout] " in the chosen colour. */
+    public static volatile String PREFIX = "§6[FlipScout]§r ";
+    /** Colour code of profits in notifications. */
+    public static volatile String PROFIT = "§2";
+
+    public static void useColors(String prefixColor, String profitColor) {
+        PREFIX = code(prefixColor, "§6") + "[FlipScout]§r ";
+        PROFIT = code(profitColor, "§2");
+    }
+
+    private static String code(String name, String fallback) {
+        for (int i = 0; i < COLOR_NAMES.length; i++) {
+            if (COLOR_NAMES[i].equals(name)) {
+                return COLOR_CODES[i];
+            }
+        }
+        return fallback;
+    }
+
+    /** Notification text with its profits ("§2") in the chosen colour. */
+    public static String profits(String text) {
+        String code = PROFIT;
+        return text == null || "§2".equals(code) ? text : text.replace("§2", code);
+    }
 
     /** RUN and SUGGEST carry a command, URL a web address opened in the browser. */
     public enum Click { RUN, SUGGEST, URL }

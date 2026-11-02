@@ -44,7 +44,7 @@ final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
         "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "history", "player", "discord",
-        "coop", "replay", "export", "set", "config",
+        "coop", "replay", "export", "blocked", "search", "museum", "set", "config",
         "blacklist", "status", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
@@ -118,6 +118,15 @@ final class Commands {
                     break;
                 case "replay":
                     replay();
+                    break;
+                case "blocked":
+                    blocked();
+                    break;
+                case "search":
+                    search(args);
+                    break;
+                case "museum":
+                    museum(args);
                     break;
                 case "export":
                     export(args);
@@ -233,6 +242,9 @@ final class Commands {
         helpLine("player <name>", "player ", "a player's auctions: up for sale now and the last ones");
         helpLine("recent [page]", "recent", "latest notifications (the last 100)");
         helpLine("replay", "replay", "notified auctions that are still up for sale");
+        helpLine("blocked", "blocked", "auctions your filters turned down, and why");
+        helpLine("search <name> [max:<price>]", "search ", "cheapest auctions of an item, e.g. search hyperion max:900m");
+        helpLine("museum [n]", "museum", "cheapest museum experience: items and armor sets per XP");
         helpLine("open", "open", "opens the latest notification");
         helpLine("profits", "profits", "how much you made: session, today, total");
         helpLine("session [pause|resume|reset|history]", "session ", "manages the session");
@@ -396,6 +408,90 @@ final class Commands {
         }
         addSaleState(msg, notification);
         return msg;
+    }
+
+    /** Auctions that looked like flips but missed a filter. */
+    private void blocked() {
+        List<Engine.Rejection> list = engine.rejected();
+        if (list.isEmpty()) {
+            info("§7Nothing turned down yet: auctions that look like a flip but miss one of your filters show up here.");
+            return;
+        }
+        info("§fAuctions your filters turned down §8(newest first, hover for details):");
+        long now = clock.getAsLong();
+        for (int i = 0; i < Math.min(15, list.size()); i++) {
+            Engine.Rejection r = list.get(i);
+            String item = engine.notifier().itemName(r.listing);
+            boolean listed = engine.index.contains(r.listing.uuid);
+            String line = "§7  " + item + " §8» §6" + Coins.compact(r.listing.price) + " §8| " + Msg.PROFIT + "+"
+                + Coins.compact(r.profit) + " §7(" + Coins.decimal(r.percent, 1) + "%) §8| §c" + r.reason;
+            String hover = item + "\n§7Why: §c" + r.reason + "\n§7Seen §f" + Text.ago(now, r.time)
+                + (listed ? "\n§eClick to open the auction" : "\n§8No longer up for sale");
+            platform.showMessage(listed ? new Msg().run(line, "/viewauction " + r.listing.uuid, hover) : new Msg().add(line, hover));
+        }
+    }
+
+    private void search(String[] args) {
+        List<String> words = new ArrayList<String>();
+        long max = 0;
+        for (int i = 1; i < args.length; i++) {
+            String arg = args[i].toLowerCase(Locale.ROOT);
+            if (arg.startsWith("max:")) {
+                try {
+                    max = Coins.parse(arg.substring(4));
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Not an amount: " + arg.substring(4));
+                }
+            } else {
+                words.add(arg);
+            }
+        }
+        if (words.isEmpty()) {
+            throw new IllegalArgumentException("Usage: /flipscout search <name> [max:<price>]");
+        }
+        int[] found = new int[1];
+        List<AuctionIndex.Listing> listings = engine.index.search(words, max, 10, found);
+        String query = String.join(" ", words);
+        if (listings.isEmpty()) {
+            info("§7No BIN auction matches \"" + query + "\"" + (max > 0 ? " up to " + Coins.compact(max) : "") + "."
+                + (engine.initialScanDone() ? "" : " §8(still reading the auction house)"));
+            return;
+        }
+        info("§fCheapest BIN auctions for \"" + query + "\"" + (max > 0 ? " up to " + Coins.compact(max) : "") + " §8("
+            + found[0] + " found" + (engine.initialScanDone() ? "" : ", still reading the auction house") + "):");
+        long serverNow = engine.serverTime();
+        for (AuctionIndex.Listing l : listings) {
+            platform.showMessage(new Msg().run("§7  " + engine.notifier().itemName(l) + " §8» §6" + Coins.compact(l.price)
+                    + (l.count > 1 ? " §8(" + Coins.compact(l.unitPrice) + " each)" : "")
+                    + (l.end > serverNow ? " §8ends in " + Text.duration(l.end - serverNow) : ""),
+                "/viewauction " + l.uuid, "§eClick to open the auction"));
+        }
+    }
+
+    private void museum(String[] args) {
+        int limit = limit(args, 1, 10);
+        if (engine.items().size() == 0) {
+            info("§eThe item list is not loaded yet, try again shortly.");
+            return;
+        }
+        List<Engine.Donation> donations = engine.cheapestDonations(limit);
+        if (donations.isEmpty()) {
+            info("§7No museum item is for sale in what has been read so far.");
+            return;
+        }
+        info("§fCheapest museum experience §8(coins per XP; already donated items are not known to the mod"
+            + (engine.initialScanDone() ? "" : "; still reading the auction house") + "):");
+        for (Engine.Donation d : donations) {
+            String line = "§7  " + d.name + " §8» §6" + Coins.compact(d.price) + " §8for §b" + d.xp + " XP §8("
+                + Coins.compact(d.perXp()) + "/XP)";
+            if (d.command != null) {
+                platform.showMessage(new Msg().run(line, d.command, "§eClick to " + (d.command.startsWith("/bz")
+                    ? "open the bazaar" : "open the cheapest auction")));
+            } else {
+                platform.showMessage(new Msg().suggest(line, "/ahs " + d.name.replace(" set", ""),
+                    "§7Every piece of the set, each at its cheapest\n§eClick to type an auction search"));
+            }
+        }
     }
 
     /** The notified auctions that nobody has bought yet. */

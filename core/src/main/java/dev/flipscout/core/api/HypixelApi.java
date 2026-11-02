@@ -461,6 +461,10 @@ public final class HypixelApi {
         double npc = 0;
         ItemCatalog.StarCost[][] upgradeCosts = null;
         boolean dungeonItem = false;
+        int museumXp = 0;
+        String museumSet = null;
+        int museumSetXp = 0;
+        String museumCategory = null;
         in.beginObject();
         while (in.hasNext()) {
             String field = in.nextName();
@@ -468,6 +472,15 @@ public final class HypixelApi {
                 upgradeCosts = readUpgradeCosts(JsonTree.arr(JsonTree.read(in)));
             } else if ("dungeon_item".equals(field)) {
                 dungeonItem = Json.readBoolean(in, false);
+            } else if ("museum_data".equals(field) && in.peek() == JsonToken.BEGIN_OBJECT) {
+                // {"donation_xp": 2, "category": "COMBAT"} or, for armor, {"armor_set_donation_xp": {"ARACHNE": 4}}.
+                Map<String, Object> museum = JsonTree.obj(JsonTree.read(in));
+                museumXp = (int) JsonTree.num(museum.get("donation_xp"), 0);
+                museumCategory = JsonTree.str(museum.get("category"));
+                for (Map.Entry<String, Object> set : JsonTree.obj(museum.get("armor_set_donation_xp")).entrySet()) {
+                    museumSet = set.getKey();
+                    museumSetXp = (int) JsonTree.num(set.getValue(), 0);
+                }
             } else if ("id".equals(field)) {
                 id = Json.readString(in);
             } else if ("name".equals(field)) {
@@ -481,7 +494,8 @@ public final class HypixelApi {
             }
         }
         in.endObject();
-        return id == null ? null : new ItemCatalog.Info(id, name, tier, npc, upgradeCosts, dungeonItem);
+        return id == null ? null : new ItemCatalog.Info(id, name, tier, npc, upgradeCosts, dungeonItem, museumXp,
+            museumSet == null ? null : museumSet.intern(), museumSetXp, museumCategory == null ? null : museumCategory.intern());
     }
 
     /** [[{"type":"ESSENCE","essence_type":"WITHER","amount":10}, {"type":"ITEM","item_id":"X","amount":2}], ...] */

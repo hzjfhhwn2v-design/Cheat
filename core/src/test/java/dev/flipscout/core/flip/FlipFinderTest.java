@@ -92,6 +92,50 @@ class FlipFinderTest {
         assertEquals("/viewauction new", flip.command());
     }
 
+    @Test
+    void verdictsSayWhichFilterTurnedAnAuctionDown() {
+        hyperionMarket();
+        AuctionIndex.Listing small = listing("small", HYPERION, 860_000_000L, 1);
+        index.add(small);
+        AuctionFlipFinder.Verdict verdict = finder.assess(small, false);
+        assertNull(verdict.flip);
+        // 895M - 31.325M fees - 860M = 3.675M: below 5%.
+        assertEquals("margin 0.4% below 5%", verdict.reason);
+        assertEquals(3_675_000, verdict.profit, 1e-3);
+
+        config.ahMinProfit = 5_000_000;
+        assertEquals("profit 3.68M below the minimum of 5M", finder.assess(small, false).reason);
+        config.ahItemMinProfit = Collections.singletonMap("HYPERION", 1_000_000L);
+        assertEquals("margin 0.4% below 5%", finder.assess(small, false).reason);
+        config.ahItemMinProfit = Collections.singletonMap("HYPERION", 4_000_000L);
+        assertEquals("profit 3.68M below this item's minimum of 4M", finder.assess(small, false).reason);
+
+        // Whitelisted items only need a profit.
+        config.whitelist = Collections.singleton("HYPERION");
+        assertNotNull(finder.assess(small, false).flip);
+        config.whitelist = Collections.<String>emptySet();
+
+        config.ahMinPrice = 900_000_000L;
+        assertEquals("cheaper than your minimum price of 900M", finder.assess(small, false).reason);
+        config.ahMinPrice = 0;
+        config.budget = 500_000_000L;
+        assertEquals("over your budget of 500M", finder.assess(small, false).reason);
+        config.budget = 0;
+        config.blacklist = Collections.singleton("HYPERION");
+        assertEquals("blacklist", finder.assess(small, false).reason);
+    }
+
+    @Test
+    void anItemRuleCanLowerTheMinimumProfit() {
+        hyperionMarket();
+        config.ahMinProfit = 100_000_000L;
+        AuctionIndex.Listing cheap = listing("new", HYPERION, 800_000_000L, 1);
+        index.add(cheap);
+        assertNull(finder.evaluate(cheap, false));
+        config.ahItemMinProfit = Collections.singletonMap("HYPERION", 50_000_000L);
+        assertNotNull(finder.evaluate(cheap, false));
+    }
+
     private AuctionIndex.Listing upgraded(String uuid, long price, Map<String, Object> extra) {
         return new AuctionIndex.Listing(uuid, "seller", "Hyperion", "LEGENDARY", HYPERION, price, 1, NOW - 1_000,
             NOW + 3_600_000L, NOW, 1, ItemKeys.upgrades("HYPERION", extra));

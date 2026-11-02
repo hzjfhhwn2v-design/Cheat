@@ -29,6 +29,13 @@ public final class ItemCatalog {
         public final StarCost[][] upgradeCosts;
         /** Dungeon items take master stars after their fifth star. */
         public final boolean dungeonItem;
+        /** Museum experience for donating the item on its own, 0 when it is not donated alone. */
+        public final int museumXp;
+        /** The armor set the item is donated with, or null; and the set's museum experience. */
+        public final String museumSet;
+        public final int museumSetXp;
+        /** Museum category (COMBAT, MINING...), or null. */
+        public final String museumCategory;
 
         public Info(String id, String name, String tier, double npcSellPrice) {
             this(id, name, tier, npcSellPrice, null, false);
@@ -36,12 +43,21 @@ public final class ItemCatalog {
 
         public Info(String id, String name, String tier, double npcSellPrice, StarCost[][] upgradeCosts,
                     boolean dungeonItem) {
+            this(id, name, tier, npcSellPrice, upgradeCosts, dungeonItem, 0, null, 0, null);
+        }
+
+        public Info(String id, String name, String tier, double npcSellPrice, StarCost[][] upgradeCosts,
+                    boolean dungeonItem, int museumXp, String museumSet, int museumSetXp, String museumCategory) {
             this.id = id;
             this.name = name;
             this.tier = tier;
             this.npcSellPrice = npcSellPrice;
             this.upgradeCosts = upgradeCosts;
             this.dungeonItem = dungeonItem;
+            this.museumXp = museumXp;
+            this.museumSet = museumSet;
+            this.museumSetXp = museumSetXp;
+            this.museumCategory = museumCategory;
         }
     }
 

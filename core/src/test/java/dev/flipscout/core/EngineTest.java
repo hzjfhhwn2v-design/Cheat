@@ -86,6 +86,40 @@ class EngineTest {
     }
 
     @Test
+    void auctionsBelowWhatAnNpcPaysAreAlertedAndTurnedDownOnesExplained() {
+        http.put(H + "/v2/resources/skyblock/items", "{\"success\":true,\"items\":[{\"id\":\"HYPERION\",\"name\":\"Hyperion\","
+            + "\"tier\":\"LEGENDARY\"},{\"id\":\"ENCHANTED_ROTTEN_FLESH\",\"name\":\"Enchanted Rotten Flesh\","
+            + "\"npc_sell_price\":160}]}");
+        initialMarket();
+        long t1 = T0 + 60_000;
+        String flesh = TestData.stack("ENCHANTED_ROTTEN_FLESH", 64);
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L),
+            hyperion("meh", "s5", 860_000_000L, t1 - 10_000),
+            TestData.auction("flesh", "s6", "Enchanted Rotten Flesh", "UNCOMMON", 2_000L, true, t1 - 10_000, flesh)));
+        config.ahNpcMinProfit = 5_000;
+        clock.set(t1 + 5_000);
+        engine.tick();
+        List<Msg> npc = platform.withCommand("/viewauction flesh");
+        assertEquals(1, npc.size(), platform.allText());
+        assertTrue(npc.get(0).toPlainString().contains("AH→NPC Enchanted Rotten Flesh x64 » 2k → NPC 10.2k | +8.24k"),
+            npc.get(0).toPlainString());
+        List<Engine.Rejection> rejected = engine.rejected();
+        assertEquals(1, rejected.size());
+        assertEquals("meh", rejected.get(0).listing.uuid);
+        assertEquals("margin 0.4% below 5%", rejected.get(0).reason);
+
+        // The same data prices items in tooltips: the 860M auction is now the lowest BIN.
+        List<String> tooltip = engine.tooltip(TestData.map("id", "HYPERION"), "Hyperion", 1, null);
+        assertTrue(tooltip.get(0).contains("worth §a860M §8(lowest BIN 860M, sales 895M)"), tooltip.toString());
+        assertTrue(tooltip.get(1).contains("Lowball: §e705M §8(85% of 830M after fees)"), tooltip.toString());
+        assertTrue(engine.tooltip(TestData.map("id", "NOT_SOLD_ANYWHERE"), "x", 1, null).get(0).contains("no price data"));
+        config.tooltipEnabled = false;
+        assertTrue(engine.tooltip(TestData.map("id", "HYPERION"), "Hyperion", 1, null).isEmpty());
+    }
+
+    @Test
     void blacklistedSellersAreNeverNotified() {
         config.blacklist = new java.util.LinkedHashSet<String>(java.util.Arrays.asList("PLAYER:BADGUY"));
         http.put(dev.flipscout.core.extra.Players.MOJANG + "BADGUY", "{\"id\":\"badguyuuid\",\"name\":\"BadGuy\"}");

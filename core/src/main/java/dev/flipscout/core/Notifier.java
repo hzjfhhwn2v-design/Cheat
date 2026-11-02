@@ -38,7 +38,7 @@ final class Notifier {
             line.append(" §c⚠");
         }
         line.append(" §b§l[OPEN]");
-        return new Msg().run(line.toString(), flip.command(), auctionHover(flip, now));
+        return new Msg().run(Msg.profits(line.toString()), flip.command(), Msg.profits(auctionHover(flip, now)));
     }
 
     String auctionHover(AuctionFlip flip, long now) {
@@ -172,7 +172,7 @@ final class Notifier {
                 break;
         }
         line.append(" §b§l[BAZAAR]");
-        return new Msg().run(line.toString(), flip.command(), hover);
+        return new Msg().run(Msg.profits(line.toString()), flip.command(), Msg.profits(hover));
     }
 
     /**
@@ -199,6 +199,19 @@ final class Notifier {
         int n = sorted.size();
         return new Msg().run(Msg.PREFIX + "§7Your filters blocked §e" + n + " §7flips §8(hover to see them)",
             "/flipscout blacklist list", h.toString());
+    }
+
+    /** An auction that costs less than an NPC pays for the item. */
+    Msg npcAuction(AuctionFlip flip) {
+        AuctionIndex.Listing l = flip.listing;
+        String line = Msg.PREFIX + "§eAH→NPC " + itemName(l) + " §8» §6" + Coins.compact(l.price) + " §8→ §aNPC "
+            + Coins.compact(flip.resale) + " §8| §2+" + Coins.compact(flip.profit) + " §7(" + Coins.decimal(flip.percent, 1)
+            + "%) §b§l[OPEN]";
+        String hover = itemName(l) + "\n§8" + l.key.key + "\n§7Price: §6" + Coins.full(l.price)
+            + "\n§7An NPC pays: §a" + Coins.full(flip.resale)
+            + (l.count > 1 ? " §8(" + Coins.compact(flip.resale / l.count) + " each)" : "")
+            + "\n§7Profit: §2+" + Coins.full(flip.profit) + "\n§8Sell it to any NPC: no taxes.\n§eClick to open the auction";
+        return new Msg().run(Msg.profits(line), flip.command(), Msg.profits(hover));
     }
 
     /** One hover line for an auction flip the blacklist hid. */

@@ -336,10 +336,75 @@ class CommandsTest {
     }
 
     @Test
+    void phaseTwoCommands() {
+        long t0 = 1_800_000_000_000L;
+        AtomicLong clock = new AtomicLong(t0 + 5_000);
+        FakeFetcher http = new FakeFetcher();
+        FakePlatform platform = new FakePlatform();
+        FlipScout fs = new FlipScout(platform, new File(dir, "phase2"), http, clock::get);
+        fs.config().sourceCoflnet = false;
+        fs.config().mayorNotify = false;
+        String h = "https://api.hypixel.net/v2/";
+        http.put(h + "resources/skyblock/items", "{\"success\":true,\"items\":[{\"id\":\"HYPERION\",\"name\":\"Hyperion\","
+            + "\"tier\":\"LEGENDARY\",\"museum_data\":{\"donation_xp\":10,\"category\":\"WEAPONS\"}},{\"id\":\"ARACHNE_BOOTS\","
+            + "\"name\":\"Arachne Boots\",\"museum_data\":{\"armor_set_donation_xp\":{\"ARACHNE\":4}}}]}");
+        String hyperion = TestData.plainItem("HYPERION");
+        http.put(h + "skyblock/auctions?page=0", TestData.auctionPage(0, 1, t0,
+            TestData.auction("a1", "s1", "Hyperion", "LEGENDARY", 900_000_000L, true, t0 - 3_600_000L, hyperion),
+            TestData.auction("a2", "s2", "Hyperion", "LEGENDARY", 910_000_000L, true, t0 - 3_600_000L, hyperion)));
+        String[] sold = new String[5];
+        for (int i = 0; i < sold.length; i++) {
+            sold[i] = TestData.ended("e" + i, 893_000_000L + i * 1_000_000L, true, t0 - 30_000, hyperion);
+        }
+        http.put(h + "skyblock/auctions_ended", TestData.endedPage(t0, sold));
+        fs.engine().tick();
+        long t1 = t0 + 60_000;
+        http.put(h + "skyblock/auctions?page=0", TestData.auctionPage(0, 1, t1,
+            TestData.auction("a1", "s1", "Hyperion", "LEGENDARY", 900_000_000L, true, t0 - 3_600_000L, hyperion),
+            TestData.auction("a2", "s2", "Hyperion", "LEGENDARY", 910_000_000L, true, t0 - 3_600_000L, hyperion),
+            TestData.auction("meh", "s5", "Hyperion", "LEGENDARY", 860_000_000L, true, t1 - 10_000, hyperion),
+            TestData.auction("new", "s4", "Hyperion", "LEGENDARY", 800_000_000L, true, t1 - 10_000, hyperion)));
+        clock.set(t1 + 5_000);
+        fs.engine().tick();
+
+        fs.command(new String[] {"blocked"});
+        String text = platform.allText();
+        assertTrue(text.contains("Hyperion » 860M | +3.68M (0.4%) | margin 0.4% below 5%"), text);
+        fs.command(new String[] {"search", "hyper", "max:850m"});
+        text = platform.allText();
+        assertTrue(text.contains("Cheapest BIN auctions for \"hyper\" up to 850M (1 found):"), text);
+        assertTrue(text.contains("Hyperion » 800M"), text);
+        fs.command(new String[] {"museum"});
+        text = platform.allText();
+        assertTrue(text.contains("Hyperion » 800M for 10 XP (80M/XP)"), text);
+        assertTrue(!text.contains("Arachne"), text);
+
+        fs.command(new String[] {"set", "ah.itemMinProfit", "HYPERION=20m,juju_shortbow=1.5m"});
+        assertEquals(Long.valueOf(20_000_000L), fs.config().ahItemMinProfit.get("HYPERION"));
+        assertEquals(Long.valueOf(1_500_000L), fs.config().ahItemMinProfit.get("JUJU_SHORTBOW"));
+        fs.command(new String[] {"set", "ah.itemMinProfit", "HYPERION"});
+        assertTrue(platform.allText().contains("write ID=amount"), platform.allText());
+
+        List<String> tooltip = fs.tooltip(TestData.rawNbt(TestData.map("ExtraAttributes", TestData.map("id", "HYPERION"))),
+            "§6Hyperion", 1);
+        assertTrue(tooltip.get(0).contains("FlipScout: §fworth"), tooltip.toString());
+        assertEquals(tooltip, fs.tooltip(TestData.rawNbt(TestData.map("id", "HYPERION")), "§6Hyperion", 1));
+        assertTrue(fs.tooltip(new byte[] {1, 2, 3}, "junk", 1).isEmpty());
+
+        try {
+            fs.command(new String[] {"set", "chat.prefixColor", "aqua"});
+            fs.command(new String[] {"test"});
+            assertTrue(platform.messages.get(platform.messages.size() - 1).parts().get(0).text.startsWith("§b[FlipScout]"));
+        } finally {
+            Msg.useColors("gold", "dark_green");
+        }
+    }
+
+    @Test
     void tabCompletion() {
         assertTrue(flipScout.complete(new String[] {"se"}).contains("set"));
-        assertEquals(Arrays.asList("ah.minProfit", "ah.minPercent"), flipScout.complete(new String[] {"set", "ah.minP"}));
-        assertEquals(Arrays.asList("ah.minProfit"), flipScout.complete(new String[] {"set", "ah.minPr"}));
+        assertEquals(Arrays.asList("ah.minProfit", "ah.minPercent", "ah.minPrice"), flipScout.complete(new String[] {"set", "ah.minP"}));
+        assertEquals(Arrays.asList("ah.minProfit", "ah.minPrice"), flipScout.complete(new String[] {"set", "ah.minPr"}));
         assertEquals(Arrays.asList("conservative", "lbin", "sales"), flipScout.complete(new String[] {"set", "strategy", ""}));
         assertEquals(Arrays.asList("on", "off"), flipScout.complete(new String[] {"bz", "npc", ""}));
         List<String> coins = flipScout.complete(new String[] {"set", "budget", ""});
