@@ -278,6 +278,35 @@ class CommandsTest {
     }
 
     @Test
+    void historyAndPlayerCommands() {
+        FakeFetcher http = new FakeFetcher()
+            .put("https://sky.coflnet.com/api/item/price/HYPERION/history/week", "[{\"min\":1,\"max\":3,\"avg\":2,\"volume\":1,"
+                + "\"time\":\"2027-01-14T00:00:00\"}]")
+            .put("https://api.mojang.com/users/profiles/minecraft/baldih", "{\"id\":\"0123abcd\",\"name\":\"baldih\"}")
+            .put("https://sky.coflnet.com/api/player/0123abcd/auctions?page=0", "[{\"auctionId\":\"x1\",\"highestBid\":5000000,"
+                + "\"itemName\":\"Juju Shortbow\",\"tag\":\"JUJU_SHORTBOW\",\"end\":\"2027-01-14T00:00:00\",\"startingBid\":5000000,"
+                + "\"bin\":true}]");
+        FakePlatform platform = new FakePlatform();
+        FlipScout fs = new FlipScout(platform, new File(dir, "history"), http, new AtomicLong(1_800_000_000_000L)::get);
+        fs.command(new String[] {"history", "hyperion", "week"});
+        String text = platform.allText();
+        assertTrue(text.contains("Hyperion - auction price, last 7 days"), text);
+        fs.command(new String[] {"history", "???"});
+        assertTrue(platform.allText().contains("Unknown item: ???"), platform.allText());
+        fs.command(new String[] {"player", "baldih"});
+        text = platform.allText();
+        assertTrue(text.contains("baldih - 0 BIN auctions up for sale"), text);
+        assertTrue(text.contains("Juju Shortbow - sold for 5M"), text);
+        fs.command(new String[] {"player", "not a name"});
+        assertTrue(platform.allText().contains("Usage: /flipscout player <name>"), platform.allText());
+        fs.command(new String[] {"blacklist", "add", "player:bad name"});
+        fs.command(new String[] {"blacklist", "add", "player:Scammer1"});
+        assertTrue(fs.config().blacklist.contains("PLAYER:SCAMMER1"));
+        assertTrue(platform.allText().contains("auctions by this player are never notified"), platform.allText());
+        assertTrue(fs.complete(new String[] {"blacklist", "add", "p"}).contains("player:"));
+    }
+
+    @Test
     void tabCompletion() {
         assertTrue(flipScout.complete(new String[] {"se"}).contains("set"));
         assertEquals(Arrays.asList("ah.minProfit", "ah.minPercent"), flipScout.complete(new String[] {"set", "ah.minP"}));

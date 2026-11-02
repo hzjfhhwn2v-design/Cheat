@@ -86,6 +86,26 @@ class EngineTest {
     }
 
     @Test
+    void blacklistedSellersAreNeverNotified() {
+        config.blacklist = new java.util.LinkedHashSet<String>(java.util.Arrays.asList("PLAYER:BADGUY"));
+        http.put(dev.flipscout.core.extra.Players.MOJANG + "BADGUY", "{\"id\":\"badguyuuid\",\"name\":\"BadGuy\"}");
+        initialMarket();
+        long t1 = T0 + 60_000;
+        http.put(PAGE0, TestData.auctionPage(0, 1, t1,
+            hyperion("a1", "s1", 900_000_000L, T0 - 3_600_000L),
+            hyperion("a2", "s2", 910_000_000L, T0 - 3_600_000L),
+            hyperion("good", "s5", 801_000_000L, t1 - 10_000),
+            hyperion("bad", "badguyuuid", 700_000_000L, t1 - 10_000)));
+        clock.set(t1 + 5_000);
+        engine.tick();
+        assertTrue(platform.withCommand("/viewauction bad").isEmpty());
+        assertEquals(1, platform.withCommand("/viewauction good").size());
+        List<Msg> summary = platform.withCommand("/flipscout blacklist list");
+        assertEquals(1, summary.size());
+        assertTrue(summary.get(0).parts().get(0).hover.contains("(PLAYER:BADGUY)"), summary.get(0).parts().get(0).hover);
+    }
+
+    @Test
     void skyCoflListsAreSummedUpOnceThenAlertNewFlips() {
         config.sourceCoflnet = true;
         config.otherKatNotify = false;

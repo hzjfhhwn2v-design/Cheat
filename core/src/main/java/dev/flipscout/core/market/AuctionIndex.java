@@ -186,6 +186,23 @@ public final class AuctionIndex {
         return out;
     }
 
+    /** The listings of one seller (UUID, lowercase without dashes), most expensive first. */
+    public synchronized List<Listing> bySeller(String seller) {
+        List<Listing> out = new ArrayList<Listing>();
+        for (Listing listing : byUuid.values()) {
+            if (seller.equals(listing.seller)) {
+                out.add(listing);
+            }
+        }
+        java.util.Collections.sort(out, new Comparator<Listing>() {
+            @Override
+            public int compare(Listing a, Listing b) {
+                return Long.compare(b.price, a.price);
+            }
+        });
+        return out;
+    }
+
     /** Every listing that has upgrades worth looking at. */
     public synchronized List<Listing> withUpgrades() {
         List<Listing> out = new ArrayList<Listing>();

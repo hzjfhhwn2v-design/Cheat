@@ -10,6 +10,7 @@ import dev.flipscout.core.api.HypixelApi;
 import dev.flipscout.core.api.BazaarProduct;
 import dev.flipscout.core.api.ItemCatalog;
 import dev.flipscout.core.extra.CoflLists;
+import dev.flipscout.core.extra.History;
 import dev.flipscout.core.extra.Market;
 import dev.flipscout.core.extra.MayorText;
 import dev.flipscout.core.extra.Mayors;
@@ -17,6 +18,7 @@ import dev.flipscout.core.extra.Opportunities;
 import dev.flipscout.core.extra.Opportunity;
 import dev.flipscout.core.extra.OpportunityKind;
 import dev.flipscout.core.extra.OpportunityText;
+import dev.flipscout.core.extra.Players;
 import dev.flipscout.core.flip.AuctionFlip;
 import dev.flipscout.core.flip.AuctionFlipFinder;
 import dev.flipscout.core.flip.BazaarFlip;
@@ -211,7 +213,14 @@ public final class Engine {
     final CoflLists coflLists;
     final Opportunities opportunities;
     final Mayors mayors;
+    final Players players;
+    final History history;
     private final Notifier notifier = new Notifier();
+    /** "PLAYER:NAME" blacklist entries and the UUID each resolved to. */
+    private final Map<String, String> sellerUuids = new ConcurrentHashMap<String, String>();
+    /** Entries that could not be resolved, and when to try again. */
+    private final Map<String, Long> sellerRetry = new ConcurrentHashMap<String, Long>();
+    static final String SELLER_PREFIX = "PLAYER:";
     private final BlockedFlips blocked = new BlockedFlips();
 
     private final Map<String, ItemKey> canonicalKeys = new ConcurrentHashMap<String, ItemKey>();
@@ -254,6 +263,8 @@ public final class Engine {
     private final AtomicBoolean prefetchJob = new AtomicBoolean();
     private final AtomicBoolean otherJob = new AtomicBoolean();
     private final AtomicBoolean mayorJob = new AtomicBoolean();
+    private final AtomicBoolean sellerJob = new AtomicBoolean();
+    private volatile long nextSellerCheck;
     private volatile long nextMayorCheck;
     private final AtomicBoolean coopJob = new AtomicBoolean();
     private final AtomicInteger pendingConfirmations = new AtomicInteger();
@@ -288,6 +299,8 @@ public final class Engine {
         this.opportunities = new Opportunities(config, coflLists, market, clock);
         this.mayors = new Mayors(config, http, market, clock, new File(dataDir, "mayor.json"), this::mayorAuctionItems,
             Mayors.SLEEP);
+        this.players = new Players(http, () -> config.urlCoflnet);
+        this.history = new History(http, () -> config.urlCoflnet, clock);
     }
 
     /** Plain auction items with the most coins traded, for the mayor analysis. */
@@ -498,6 +511,12 @@ public final class Engine {
             final OpportunityKind due = opportunities.due(now);
             if (due != null) {
                 background(otherJob, () -> refreshOpportunities(due));
+            }
+        }
+        if (now >= nextSellerCheck) {
+            nextSellerCheck = now + 5_000L;
+            if (unresolvedSellers(now)) {
+                background(sellerJob, this::resolveSellers);
             }
         }
         if (now >= nextMayorCheck && !mayorJob.get()) {
@@ -716,6 +735,9 @@ public final class Engine {
             return;
         }
         String blockedBy = config.blacklistMatch(listing.key.id, listing.key.key);
+        if (blockedBy == null) {
+            blockedBy = blockedSeller(listing.seller);
+        }
         if (blockedBy != null) {
             if (config.blockedSummary) {
                 AuctionFlip hidden = auctionFinder.evaluateBlacklisted(listing);
@@ -1131,6 +1153,70 @@ public final class Engine {
 
     public Mayors mayors() {
         return mayors;
+    }
+
+    public Players players() {
+        return players;
+    }
+
+    public History history() {
+        return history;
+    }
+
+    // ---- Blocked sellers ----
+
+    private boolean unresolvedSellers(long now) {
+        for (String entry : config.blacklist) {
+            if (entry.startsWith(SELLER_PREFIX) && !sellerUuids.containsKey(entry)) {
+                Long retry = sellerRetry.get(entry);
+                if (retry == null || now >= retry) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Looks up the UUIDs of the players in the blacklist (their auctions are never notified). */
+    private void resolveSellers() {
+        long now = clock.getAsLong();
+        for (String entry : config.blacklist) {
+            if (!entry.startsWith(SELLER_PREFIX) || sellerUuids.containsKey(entry)) {
+                continue;
+            }
+            Long retry = sellerRetry.get(entry);
+            if (retry != null && now < retry) {
+                continue;
+            }
+            String name = entry.substring(SELLER_PREFIX.length());
+            try {
+                String uuid = Players.NAME.matcher(name).matches() ? players.uuid(name) : null;
+                if (uuid != null) {
+                    sellerUuids.put(entry, uuid);
+                    sellerRetry.remove(entry);
+                } else {
+                    sellerRetry.put(entry, now + HOUR);
+                    Log.warn("No player called " + name + " (blacklist entry " + entry + ")");
+                }
+            } catch (IOException | RuntimeException e) {
+                sellerRetry.put(entry, now + 10 * MINUTE);
+                Log.debug("Could not look up " + name + ": " + e);
+            }
+        }
+    }
+
+    /** The "PLAYER:NAME" blacklist entry that blocks a seller, or null. */
+    String blockedSeller(String seller) {
+        if (seller == null || sellerUuids.isEmpty()) {
+            return null;
+        }
+        Set<String> list = config.blacklist;
+        for (Map.Entry<String, String> entry : sellerUuids.entrySet()) {
+            if (entry.getValue().equals(seller) && list.contains(entry.getKey())) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     public Market market() {

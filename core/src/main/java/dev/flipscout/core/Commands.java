@@ -2,11 +2,13 @@ package dev.flipscout.core;
 
 import dev.flipscout.core.api.BazaarSnapshot;
 import dev.flipscout.core.api.ItemCatalog;
+import dev.flipscout.core.extra.History;
 import dev.flipscout.core.extra.MayorText;
 import dev.flipscout.core.extra.Mayors;
 import dev.flipscout.core.extra.Opportunity;
 import dev.flipscout.core.extra.OpportunityKind;
 import dev.flipscout.core.extra.OpportunityText;
+import dev.flipscout.core.extra.Players;
 import dev.flipscout.core.extra.SupplyItem;
 import dev.flipscout.core.flip.AuctionFlip;
 import dev.flipscout.core.flip.BazaarFlip;
@@ -40,7 +42,8 @@ import java.util.function.LongSupplier;
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
-        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "discord", "coop", "set", "config",
+        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "history", "player", "discord",
+        "coop", "set", "config",
         "blacklist", "status", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
@@ -169,6 +172,13 @@ final class Commands {
                 case "sindaco":
                     mayor();
                     break;
+                case "history":
+                case "price":
+                    history(args);
+                    break;
+                case "player":
+                    player(args);
+                    break;
                 case "credits":
                     credits();
                     break;
@@ -212,6 +222,8 @@ final class Commands {
         helpLine("kat|craft|forge|fusion|npc|books [n]", "craft", "other flips, from SkyCofl's lists");
         helpLine("lowsupply [n]", "lowsupply", "items with few auctions listed");
         helpLine("mayor", "mayor", "mayor, election favourite and what usually moves under them");
+        helpLine("history <item> [day|week|month|all]", "history ", "price history of an item, as a chart");
+        helpLine("player <name>", "player ", "a player's auctions: up for sale now and the last ones");
         helpLine("recent", "recent", "latest notifications");
         helpLine("open", "open", "opens the latest notification");
         helpLine("profits", "profits", "how much you made: session, today, total");
@@ -223,7 +235,7 @@ final class Commands {
         helpLine("coop", "coop", "your coop members, recognized from their auctions");
         helpLine("set <key> <value>", "set ", "changes a setting (e.g. set ah.minProfit 1m)");
         helpLine("config [filter]", "config", "shows the settings");
-        helpLine("blacklist add|remove|list [ID]", "blacklist ", "items to ignore");
+        helpLine("blacklist add|remove|list [ID|player:NAME]", "blacklist ", "items or sellers to ignore");
         helpLine("status", "status", "data source status");
         helpLine("credits", "credits", "who made the mod and where the data comes from");
         helpLine("reload", "reload", "reloads the settings file");
@@ -507,14 +519,21 @@ final class Commands {
             return;
         }
         if (args.length < 3 || !("add".equals(action) || "remove".equals(action))) {
-            throw new IllegalArgumentException("Usage: /flipscout blacklist add|remove|list [ID]");
+            throw new IllegalArgumentException("Usage: /flipscout blacklist add|remove|list [ID|player:NAME]");
         }
         String id = args[2].toUpperCase(Locale.ROOT);
+        if (id.startsWith(Engine.SELLER_PREFIX) && "add".equals(action)
+            && !Players.NAME.matcher(id.substring(Engine.SELLER_PREFIX.length())).matches()) {
+            throw new IllegalArgumentException("Not a player name: " + args[2].substring(Engine.SELLER_PREFIX.length()));
+        }
         Set<String> updated = new LinkedHashSet<String>(config.blacklist);
         boolean changed = "add".equals(action) ? updated.add(id) : updated.remove(id);
         config.blacklist = Collections.unmodifiableSet(updated);
         config.save(configFile);
-        if ("add".equals(action)) {
+        if ("add".equals(action) && id.startsWith(Engine.SELLER_PREFIX)) {
+            info(changed ? "§a" + id + " §7added: auctions by this player are never notified." : "§7" + id
+                + " was already in the blacklist.");
+        } else if ("add".equals(action)) {
             info(changed ? "§a" + id + " §7added to the blacklist." : "§7" + id + " was already in the blacklist.");
         } else {
             info(changed ? "§a" + id + " §7removed from the blacklist." : "§7" + id + " was not in the blacklist.");
@@ -743,6 +762,124 @@ final class Commands {
         }
     }
 
+    private void history(String[] args) {
+        if (!coflnetOn()) {
+            return;
+        }
+        int end = args.length;
+        String range = null;
+        if (end > 2 && History.RANGES.contains(args[end - 1].toLowerCase(Locale.ROOT))) {
+            range = args[end - 1].toLowerCase(Locale.ROOT);
+            end--;
+        }
+        if (end < 2) {
+            throw new IllegalArgumentException("Usage: /flipscout history <item> [day|week|month|all]");
+        }
+        String query = join(Arrays.copyOfRange(args, 0, end), 1);
+        final String id = itemId(query);
+        if (id == null) {
+            throw new IllegalArgumentException("Unknown item: " + query + ". Use its name or ID (e.g. HYPERION)");
+        }
+        final boolean bazaar = engine.market().bazaar(id) != null;
+        final String span = range != null ? range : bazaar ? "week" : "month";
+        info("§7Searching...");
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                List<Msg> lines;
+                try {
+                    lines = engine.history().show(id, engine.items().displayName(id), bazaar, span);
+                } catch (IOException | RuntimeException e) {
+                    error("Could not read the price history from SkyCofl: " + e.getMessage());
+                    return;
+                }
+                for (Msg line : lines) {
+                    platform.showMessage(line);
+                }
+            }
+        });
+    }
+
+    /** An item ID from what the player typed: an ID, or a name. */
+    private String itemId(String query) {
+        String upper = query.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
+        if (engine.items().get(upper) != null || engine.market().bazaar(upper) != null) {
+            return upper;
+        }
+        String id = engine.items().idForName(query);
+        if (id != null) {
+            return id;
+        }
+        // Before the item list has loaded any ID-looking word may be one.
+        return upper.matches("[A-Z0-9_:]+") && (upper.contains("_") || engine.items().size() == 0) ? upper : null;
+    }
+
+    private void player(String[] args) {
+        if (args.length < 2 || !Players.NAME.matcher(args[1]).matches()) {
+            throw new IllegalArgumentException("Usage: /flipscout player <name>");
+        }
+        final String name = args[1];
+        info("§7Looking up " + name + "...");
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                String uuid;
+                try {
+                    uuid = engine.players().uuid(name);
+                } catch (IOException | RuntimeException e) {
+                    error("Could not look up " + name + ": " + e.getMessage());
+                    return;
+                }
+                if (uuid == null) {
+                    error("Nobody is called " + name + ".");
+                    return;
+                }
+                showPlayer(engine.players().name(uuid, name), uuid);
+            }
+        });
+    }
+
+    private void showPlayer(String name, String uuid) {
+        long serverNow = engine.serverTime();
+        List<AuctionIndex.Listing> active = engine.index.bySeller(uuid);
+        info("§f" + name + " §8- §7" + active.size() + " BIN auction" + (active.size() == 1 ? "" : "s") + " up for sale"
+            + (engine.initialScanDone() ? "" : " §8(still reading the auction house)"));
+        for (int i = 0; i < Math.min(10, active.size()); i++) {
+            AuctionIndex.Listing l = active.get(i);
+            String item = engine.notifier().itemName(l);
+            platform.showMessage(new Msg().run("§7  " + item + " §8» §6" + Coins.compact(l.price)
+                    + (l.end > serverNow ? " §8ends in " + Text.duration(l.end - serverNow) : ""),
+                "/viewauction " + l.uuid, "§eClick to open the auction"));
+        }
+        if (active.size() > 10) {
+            platform.showMessage(Msg.plain("§8  ... and " + (active.size() - 10) + " more"));
+        }
+        if (!config.sourceCoflnet) {
+            return;
+        }
+        List<Players.PastAuction> past;
+        try {
+            past = engine.players().auctions(uuid);
+        } catch (IOException | RuntimeException e) {
+            error("Could not read their past auctions from SkyCofl: " + e.getMessage());
+            return;
+        }
+        if (past.isEmpty()) {
+            platform.showMessage(Msg.plain("§7  No past auctions recorded."));
+            return;
+        }
+        platform.showMessage(new Msg().add("§7  Last auctions created ")
+            .link("§8[SkyCofl]", "https://sky.coflnet.com/player/" + uuid, "§7Auction history: SkyCofl (sky.coflnet.com)"));
+        long now = clock.getAsLong();
+        for (Players.PastAuction a : past) {
+            String state = a.sold() ? "§asold for " + Coins.compact(a.highestBid)
+                : a.end > now ? "§eup for " + Coins.compact(a.startingBid) : "§cnot sold §8(" + Coins.compact(a.startingBid) + ")";
+            String when = a.end <= 0 ? "" : a.end > now ? " §8ends in " + Text.duration(a.end - now) : " §8" + Text.ago(now, a.end);
+            platform.showMessage(new Msg().run("§7  " + (a.itemName == null ? a.tag : Text.stripCodes(a.itemName)) + " §8- " + state
+                + when + (a.bin ? "" : " §8(auction)"), "/viewauction " + a.uuid, "§eClick to open the auction"));
+        }
+    }
+
     private boolean coflnetOn() {
         if (!config.sourceCoflnet) {
             info("§7These lists come from SkyCofl, which is turned off: §e/flipscout set source.coflnet on");
@@ -811,6 +948,8 @@ final class Commands {
                     return startingWith(Collections.singletonList("test"), last);
                 case "blacklist":
                     return startingWith(Arrays.asList("add", "remove", "list"), last);
+                case "history":
+                    return itemIds(last);
                 case "session":
                     return startingWith(Arrays.asList("pause", "resume", "reset", "history"), last);
                 case "total":
@@ -847,7 +986,11 @@ final class Commands {
                     return startingWith(new ArrayList<String>(config.blacklist), last);
                 }
                 if ("add".equalsIgnoreCase(args[1])) {
-                    return itemIds(last);
+                    List<String> ids = new ArrayList<String>(itemIds(last));
+                    if ("player:".startsWith(last.toLowerCase(Locale.ROOT))) {
+                        ids.add(0, "player:");
+                    }
+                    return ids;
                 }
             }
         }
