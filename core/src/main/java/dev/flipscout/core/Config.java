@@ -38,6 +38,8 @@ public final class Config {
     public volatile String chatPrefixColor = "gold";
     public volatile String chatProfitColor = "dark_green";
     public volatile boolean debug = false;
+    /** Warnings and errors also shown in chat (/flipscout debug on). */
+    public volatile boolean debugChat = false;
 
     // Auction house (BIN)
     public volatile boolean ahEnabled = true;
@@ -119,6 +121,14 @@ public final class Config {
     public volatile boolean mayorNotify = true;
     public volatile int mayorItems = 80;
     public volatile double mayorMinChange = 8;
+
+    // Skin investments
+    public volatile boolean skinsEnabled = true;
+    public volatile int skinsDays = 30;
+    public volatile int skinsMinListings = 3;
+    public volatile double skinsMinSales = 0.5;
+    public volatile double skinsMaxDrawdown = 70;
+    public volatile boolean skinsFireSaleAlert = true;
 
     // Sources
     public volatile boolean sourceCoflnet = true;
@@ -218,6 +228,11 @@ public final class Config {
             new BoolSetting("debug", "Verbose log (debug)", "Writes more detail to the game log") {
                 boolean read(Config c) { return c.debug; }
                 void write(Config c, boolean v) { c.debug = v; Log.debugEnabled = v; }
+            },
+            new BoolSetting("debug.chat", "Errors in chat (debug)", "Also shows warnings and errors in chat, so you can"
+                + " see what goes wrong and report it (/flipscout debug on|off)") {
+                boolean read(Config c) { return c.debugChat; }
+                void write(Config c, boolean v) { c.debugChat = v; }
             }),
         new Section("Auctions (BIN)",
             new BoolSetting("ah.enabled", "Auction notifications", "Notify about underpriced BIN auctions") {
@@ -504,6 +519,34 @@ public final class Config {
             new DecimalSetting("mayor.minChange", "Minimum price change (%)", "Smallest usual price change worth showing", 1, 100) {
                 double read(Config c) { return c.mayorMinChange; }
                 void write(Config c, double v) { c.mayorMinChange = v; }
+            }),
+        new Section("Skin investments",
+            new BoolSetting("skins.enabled", "Skin investments", "Reads the daily prices of the skins on the auction house"
+                + " (SkyCofl, a few a minute, then each about once a day) for /flipscout skins") {
+                boolean read(Config c) { return c.skinsEnabled; }
+                void write(Config c, boolean v) { c.skinsEnabled = v; }
+            },
+            new IntSetting("skins.days", "Days to hold", "How many days you plan to keep a skin before selling it", 7, 180) {
+                int read(Config c) { return c.skinsDays; }
+                void write(Config c, int v) { c.skinsDays = v; }
+            },
+            new IntSetting("skins.minListings", "Minimum listings", "Skins with fewer BIN auctions up are left out", 1, 50) {
+                int read(Config c) { return c.skinsMinListings; }
+                void write(Config c, int v) { c.skinsMinListings = v; }
+            },
+            new DecimalSetting("skins.minSales", "Minimum sales a day", "Skins that sell less often are left out: hard"
+                + " to sell again", 0, 100) {
+                double read(Config c) { return c.skinsMinSales; }
+                void write(Config c, double v) { c.skinsMinSales = v; }
+            },
+            new DecimalSetting("skins.maxFall", "Largest fall allowed (%)", "Skins that fell this much from their high of"
+                + " the last 90 days are left out", 10, 100) {
+                double read(Config c) { return c.skinsMaxDrawdown; }
+                void write(Config c, double v) { c.skinsMaxDrawdown = v; }
+            },
+            new BoolSetting("skins.fireSaleAlert", "Fire sale alert", "Says in chat when a new fire sale is announced") {
+                boolean read(Config c) { return c.skinsFireSaleAlert; }
+                void write(Config c, boolean v) { c.skinsFireSaleAlert = v; }
             }),
         new Section("Data sources",
             new BoolSetting("source.coflnet", "Use Coflnet data", "Use Coflnet (sky.coflnet.com) for rare-item sales, volumes"

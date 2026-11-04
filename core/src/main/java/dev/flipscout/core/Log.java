@@ -20,11 +20,33 @@ public final class Log {
 
     public static volatile boolean debugEnabled = false;
 
+    /** Gets warnings and errors too, after the sink (for /flipscout debug on). */
+    public interface Echo {
+        void echo(Level level, String message, Throwable error);
+    }
+
+    private static volatile Echo echo;
+
     private Log() {
     }
 
     public static void setSink(Sink newSink) {
         sink = newSink;
+    }
+
+    public static void setEcho(Echo newEcho) {
+        echo = newEcho;
+    }
+
+    private static void echo(Level level, String message, Throwable error) {
+        Echo e = echo;
+        if (e != null) {
+            try {
+                e.echo(level, message, error);
+            } catch (RuntimeException ignored) {
+                // never let the echo break the caller
+            }
+        }
     }
 
     public static void debug(String message) {
@@ -39,13 +61,16 @@ public final class Log {
 
     public static void warn(String message) {
         sink.log(Level.WARN, message, null);
+        echo(Level.WARN, message, null);
     }
 
     public static void warn(String message, Throwable error) {
         sink.log(Level.WARN, message, error);
+        echo(Level.WARN, message, error);
     }
 
     public static void error(String message, Throwable error) {
         sink.log(Level.ERROR, message, error);
+        echo(Level.ERROR, message, error);
     }
 }

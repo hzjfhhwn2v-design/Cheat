@@ -37,8 +37,9 @@ class EngineTest {
         platform.uuid = "myuuid";
         config = new Config();
         config.sourceCoflnet = false;
-        // No election in these tests (MayorsTest covers it).
+        // No election in these tests (MayorsTest covers it), no skins (SkinEngineTest covers them).
         config.mayorNotify = false;
+        config.skinsEnabled = false;
         engine = new Engine(config, platform, http, dir, clock::get);
         http.put(H + "/v2/resources/skyblock/items",
             "{\"success\":true,\"items\":[{\"id\":\"HYPERION\",\"name\":\"Hyperion\",\"tier\":\"LEGENDARY\"}]}");

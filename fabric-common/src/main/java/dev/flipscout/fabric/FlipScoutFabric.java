@@ -78,6 +78,29 @@ public final class FlipScoutFabric implements ClientModInitializer {
         dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("fsc")
             .executes(context -> run(""))
             .redirect(root));
+        // /skininvestment: a shortcut for /flipscout skins.
+        dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("skininvestment")
+            .executes(context -> runSkins(""))
+            .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("args",
+                    StringArgumentType.greedyString())
+                .suggests(this::suggestSkins)
+                .executes(context -> runSkins(StringArgumentType.getString(context, "args")))));
+    }
+
+    private int runSkins(String args) {
+        String trimmed = args.trim();
+        flipScout.skinCommand(trimmed.isEmpty() ? new String[0] : trimmed.split("\\s+"));
+        return 1;
+    }
+
+    private CompletableFuture<Suggestions> suggestSkins(CommandContext<FabricClientCommandSource> context,
+                                                        SuggestionsBuilder builder) {
+        String typed = builder.getRemaining();
+        SuggestionsBuilder lastWord = builder.createOffset(builder.getStart() + typed.lastIndexOf(' ') + 1);
+        for (String suggestion : flipScout.completeSkinCommand(typed.split(" ", -1))) {
+            lastWord.suggest(suggestion);
+        }
+        return lastWord.buildFuture();
     }
 
     private int run(String args) {

@@ -54,6 +54,8 @@ public final class ItemKeys {
         public final Upgrades upgrades;
         /** Pet candy used on a pet (0 when none); -1 for other items and pets that do not say. */
         public final int petCandy;
+        /** A skin (pet, helmet, minion, barn...): its rarity line says COSMETIC and its name ends with "Skin". */
+        public final boolean skin;
 
         public Decoded(ItemKey key, int count, String name) {
             this(key, count, name, null);
@@ -64,11 +66,16 @@ public final class ItemKeys {
         }
 
         public Decoded(ItemKey key, int count, String name, Upgrades upgrades, int petCandy) {
+            this(key, count, name, upgrades, petCandy, false);
+        }
+
+        public Decoded(ItemKey key, int count, String name, Upgrades upgrades, int petCandy, boolean skin) {
             this.key = key;
             this.count = count;
             this.name = name;
             this.upgrades = upgrades;
             this.petCandy = petCandy;
+            this.skin = skin;
         }
     }
 
@@ -95,7 +102,28 @@ public final class ItemKeys {
         if (key == null) {
             return null;
         }
-        return new Decoded(key, count, name, count == 1 ? upgrades(key.id, extra) : null);
+        return new Decoded(key, count, name, count == 1 ? upgrades(key.id, extra) : null, -1,
+            isSkin(key.id, name, NbtReader.compound(tag.get("display"))));
+    }
+
+    /**
+     * Whether an item is a skin. Their IDs follow no rule (PET_SKIN_..., CROWN_OF_AVARICE_ROYAL,
+     * GRINCH_PERSONALITY...), but their rarity line ends in COSMETIC and their name in "Skin";
+     * a few minion skins have a plain rarity line.
+     */
+    static boolean isSkin(String id, String name, Map<String, Object> display) {
+        if (id == null || name == null || !name.trim().endsWith("Skin")) {
+            return false;
+        }
+        if (id.startsWith("PET_SKIN_") || id.endsWith("_PERSONALITY")) {
+            return true;
+        }
+        List<Object> lore = NbtReader.list(display.get("Lore"));
+        if (lore.isEmpty()) {
+            return false;
+        }
+        String last = Text.stripCodes(NbtReader.string(lore.get(lore.size() - 1)));
+        return last != null && last.contains("COSMETIC");
     }
 
     /** {@link #decode} that logs and returns null on malformed data. */

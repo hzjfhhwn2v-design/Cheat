@@ -19,6 +19,10 @@ Available for **Forge 1.8.9** and for **Fabric** from 1.21.7 to 26.3 (with Fabri
 | **AH→NPC** | An auction costs less than what an NPC pays for the item: a sure profit, no taxes. |
 | **KAT, CRAFT, FORGE, FUSION, NPC, BOOK** | Pets worth upgrading at Kat, items worth crafting or forging, shard fusions, items worth buying from an NPC and reselling, enchanted books worth combining: from SkyCofl's lists, priced again with live prices (see [Other flips](#other-flips-skycofl)). |
 | **Election** | Once per election, when one candidate is clearly ahead: the items that usually rise or fall under them (see [Mayors](#mayors-and-elections)). |
+| **Fire sale** | Hypixel announces a fire sale: which skin, how many, for how many gems, and when. |
+
+`/flipscout skins` (or `/skininvestment`) also lists the **skins worth buying now to sell in a few weeks**, after fees
+(see [Skin investments](#skin-investments)).
 
 Every notification shows the price, the estimated value, the profit and the sales per day; **hover over it** to see
 where the estimate comes from (lowest BIN of the other sellers, sales median, Coflnet) and the taxes.
@@ -117,6 +121,8 @@ on every push.
 | `/flipscout mayor` | mayor, minister, the open election and what usually moves under the favourite |
 | `/flipscout history <item> [day\|week\|month\|all]` | an item's price history as a chart, by name or ID |
 | `/flipscout player <name>` | a player's auctions: up for sale now and the last ones they created |
+| `/flipscout skins [n]` | skins worth buying now to sell in a few weeks (also `/skininvestment`); hover a skin for its numbers, click to open its cheapest BIN |
+| `/flipscout skin <name>` | everything about one skin, with a chart of its last month (also `/skininvestment detail <name>`) |
 | `/flipscout search <name> [max:<price>]` | the cheapest BIN auctions of an item, e.g. `search hyperion max:900m` |
 | `/flipscout museum [n]` | the cheapest museum experience: items and whole armor sets, by coins per XP |
 | `/flipscout open` | opens the latest notification, or tells you it was already bought (Forge also has a key for it in *Controls → FlipScout*) |
@@ -132,6 +138,7 @@ on every push.
 | `/flipscout config [filter]` | shows the settings (click one to change it) |
 | `/flipscout blacklist add\|remove\|list [ID\|player:NAME]` | items or sellers to ignore, e.g. `blacklist add HYPERION`, `blacklist add player:Someone` |
 | `/flipscout status` | the state of each data source and any errors |
+| `/flipscout debug [on\|off]` | shows the mod's warnings and errors in chat as they happen, so you can report them (also `/skininvestment debug on\|off`) |
 | `/flipscout credits` | who made the mod and where its data comes from |
 | `/flipscout reload` | reloads the settings file |
 | `/flipscout test` | shows a test notification |
@@ -142,7 +149,7 @@ The easiest way is the **menu**: `/flipscout gui`, the *Config* button in the mo
 in *Controls → FlipScout* (Forge).
 
 - **Sections on the left:** General, Auctions (BIN), Tooltips, Bazaar, Profits, Discord, Other flips (SkyCofl), Mayors,
-  Data sources. **At the top**, a search over the
+  Skin investments, Data sources. **At the top**, a search over the
   names and descriptions of every setting.
 - **ON/OFF switches**, choices that change on click (the strategy) and **fields** for numbers and amounts (`500k`,
   `2m`): an invalid value turns red and the reason shows at the bottom; it is not applied until you fix it.
@@ -192,6 +199,12 @@ They also live in `config/flipscout/flipscout.properties` (every entry is commen
 | `other.refreshMinutes` / `other.cooldownHours` | `5` / `6` | how often the lists are read, and when the same flip may be alerted again |
 | `mayor.notify` | `on` | the election alert (and the analysis behind it) |
 | `mayor.items` / `mayor.minChange` | `80` / `8` | items the mayor analysis reads, and the smallest change worth showing (%) |
+| `skins.enabled` | `on` | reads the skins' daily prices in the background for `/flipscout skins` |
+| `skins.days` | `30` | how many days you plan to keep a skin before selling it (7-180) |
+| `skins.minListings` / `skins.minSales` | `3` / `0.5` | skins with fewer BIN auctions up, or fewer sales a day, are left out |
+| `skins.maxFall` | `70` | skins that fell this much (%) from their high of the last 90 days are left out |
+| `skins.fireSaleAlert` | `on` | says in chat when a new fire sale is announced |
+| `debug` / `debug.chat` | `off` / `off` | a more detailed game log; warnings and errors in chat (`/flipscout debug on` turns on both) |
 | `source.coflnet` | `on` | uses SkyCofl data (sales of rare items, volumes, bazaar names, the lists, history, mayors) |
 | `tracker.enabled` | `on` | recognizes purchases and sales in chat and counts your profits |
 | `tracker.messages` | `on` | says in chat when it records an auction purchase or closes a flip |
@@ -334,6 +347,57 @@ saved in `config/flipscout/mayor.json`. It shows a tendency, not a promise.
 With `mayor.notify` on, once per election, when a candidate is clearly ahead, a chat line names the items that usually
 move under them.
 
+## Skin investments
+
+`/flipscout skins` lists the skins (pet, helmet, minion, barn, backpack, power orb...) worth **buying now to sell again in
+30 days**, after the auction house fees, best return for its risk first. Each line is just the skin's name: **hover**
+over it for the numbers, **click** it to open its cheapest BIN auction. A line above says how fresh the data is (green
+when the auctions were read in the last two minutes); hover it to see how many skins were left out and why.
+
+| In the hover | What it is |
+|---|---|
+| Price now | the cheapest BIN, what you would pay |
+| Expected profit / return | what you should get selling it in 30 days, after the fees, minus the price |
+| Risk | **Low**: it usually moves less than 10% in a month and fell less than 30% in 90 days; **High**: it usually moves more than 25%, or fell more than 55%, or fewer than 5 are up for sale; **Medium** in between |
+| 7 days / 30 days | how its usual price changed |
+| Volatility | how much its price usually moves in 30 days, either way |
+| Listings, sales | BIN auctions up now, and sales a day over the last month |
+| Fire sale | how many were sold for gems and when, when Hypixel announced one while the mod was running |
+| Confidence | how often, over the skin's last year, buying at this price and selling 30 days later would have been in profit |
+
+`/flipscout skin <name>` shows one skin in full: the price it sells for and where that comes from (the next cheapest BIN
+or recent sales, as for flips), the expected sale price and the fees, 7/30/90-day changes, the 30-day median, the
+largest fall, when it was first sold and what skins of that age usually do, why it is or is not advised, and a chart of
+its last 30 days (hover a bar for the day). `[chart]` opens its full chart on SkyCofl. Tab completes skin IDs, also from
+a word of the name (`/flipscout skin catg` → `PET_SKIN_BLACK_CAT_CATGIRL`).
+
+**How it is calculated.** Every skin seen on the auction house counts (they are recognised by their *COSMETIC* rarity line
+and their name: their IDs follow no rule). For those with at least 3 BIN auctions up, the mod reads SkyCofl's daily
+prices in the background: about 20 requests a minute at first, then each skin once a day; it keeps them in
+`config/flipscout/skins.json.gz`. Skins are often "sold" for hundreds of times their price to move coins between
+accounts, so each day's price leaves out its cheapest and dearest sale, and the usual price is the median of a week of
+days. Then:
+
+- **what it sells for now** is the next cheapest BIN after the one you buy, or recent sales when lower;
+- **what it should sell for in 30 days** is that, moved by what skins of the same age usually did in 30 days, learned
+  again every day from all the histories;
+- the **expected profit** takes off the auction house fees (listing and collecting).
+
+The mod does **not** expect a skin to keep rising because it rose: over a year of prices of about 300 skins, one that rose
+more than 5% in a month rose again the next month only 43% of the time (after a fall, 57%). A skin bought at its usual
+price usually loses the fees; the profit comes from buying it below what it sells for. So the list can be short, or
+empty: that is the honest answer, not an error.
+
+**Left out:** skins with fewer than 3 BIN auctions up, sold less than once every two days, first sold less than 30 days
+ago, that fell 70% or more from their high of the last 90 days, on your blacklist, or **on a fire sale** (until it ends,
+more keep being sold for gems). The thresholds are settings (`skins.*`).
+
+When Hypixel announces a **fire sale**, a chat line says which skin, how many, for how many gems and when
+(`skins.fireSaleAlert`). Hypixel only lists current fire sales, so the mod keeps the ones it saw in
+`config/flipscout/firesales.json`.
+
+This is an estimate from past prices: skins can still fall, and a skin may take longer than you planned to sell.
+
 ## History, players, search and the museum
 
 - `/flipscout history <item> [day|week|month|all]`: the price history as a bar chart in chat (hover a bar for its date,
@@ -351,9 +415,9 @@ move under them.
 
 Made by **yrqs** and **baldih**. `/flipscout credits` lists the sources in game.
 
-- **Hypixel public API**: auctions, sold auctions, bazaar, item list (with museum data), elections.
+- **Hypixel public API**: auctions, sold auctions, bazaar, item list (with museum data), elections, fire sales.
 - **SkyCofl API** ([sky.coflnet.com](https://sky.coflnet.com)): Kat, Craft, Forge, Fusion, NPC and Book flips, low
-  supply items, price and bazaar history, past mayors, player auctions, sales prices and item names.
+  supply items, price and bazaar history, skin prices, past mayors, player auctions, sales prices and item names.
 - **Mojang API**: player names and UUIDs.
 
 ## Privacy and network use
@@ -362,15 +426,16 @@ FlipScout only talks to these services, and only for what is listed:
 
 | Service | What for | What it sends |
 |---|---|---|
-| `api.hypixel.net` | auctions, sold auctions, bazaar, item list | nothing about you (public endpoints, no API key) |
-| `sky.coflnet.com` | prices, sales volumes and names of items; the flip lists; price history; past mayors; a player's auctions when you ask | item IDs; the UUID of a player you look up |
+| `api.hypixel.net` | auctions, sold auctions, bazaar, item list, elections, fire sales | nothing about you (public endpoints, no API key) |
+| `sky.coflnet.com` | prices, sales volumes and names of items; the flip lists; price history (also of skins); past mayors; a player's auctions when you ask | item IDs; the UUID of a player you look up |
 | `sessionserver.mojang.com` | the names of your coop members | their public UUIDs, taken from auctions |
 | `api.mojang.com` | the UUID of a player you look up or blacklist (`/flipscout player`, `player:NAME`) | that player's name |
 | your Discord webhook | trade reports, only if you set one | your Minecraft name, the item, prices and profit; Discord loads your head from `mc-heads.net` and the item picture from Coflnet |
 
 There is no analytics or telemetry, and nothing is sent to the author. Everything the mod saves stays in
 `config/flipscout/` on your PC: `flipscout.properties` (settings), `profits.json` (profits), `sales.bin` (sales
-history), `mayor.json` (the mayor analysis) and `exports/` (files you export). Network use is a few MB a minute, mostly for the full auction scan (the checks every half second only read the
+history), `mayor.json` (the mayor analysis), `skins.json.gz` (skin prices), `firesales.json` (fire sales seen) and
+`exports/` (files you export). Network use is a few MB a minute, mostly for the full auction scan (the checks every half second only read the
 start of the response). To lower it, raise `ah.fullScanMinutes` and `bz.intervalSeconds`, or set `ah.pollPages` to 1.
 
 ## Good to know
@@ -380,6 +445,8 @@ start of the response). To lower it, raise `ah.fullScanMinutes` and `bz.interval
   before running it (one extra click). `/flipscout open` sends it directly.
 - If a source does not answer, the mod carries on with the others; `/flipscout status` shows which one has problems. The
   source addresses can be changed (`url.hypixel`, `url.coflnet`).
+- Something not working? `/flipscout debug on` shows the mod's warnings and errors in chat (at most one a second, the
+  same one once a minute) and writes more detail to `logs/latest.log`; `/flipscout debug off` stops it.
 - The official launcher runs 1.8.9 on an old Java 8 that does not know some recent HTTPS certificates: the mod bundles
   the roots it needs and uses them only for its own connections.
 - Commands from versions before 1.3.0 (`guadagni`, `sessione`, `totale`, `magazzino`, ...) still work.
@@ -390,8 +457,8 @@ FlipScout is **All Rights Reserved** (see `LICENSE`): you can upload the officia
 redistribute or modify them. To publish it:
 
 1. **Build the jars**: push to GitHub and download the artifacts of the **Build** run (all 8 jobs must be green), or
-   build them yourself as above. Upload the jar named like `flipscout-fabric-1.21.8-1.4.0.jar` or
-   `flipscout-forge-1.8.9-1.4.0.jar` (not one ending in `-sources` or `-dev`, if present).
+   build them yourself as above. Upload the jar named like `flipscout-fabric-1.21.8-1.5.0.jar` or
+   `flipscout-forge-1.8.9-1.5.0.jar` (not one ending in `-sources` or `-dev`, if present).
 2. **Create the project** on [modrinth.com](https://modrinth.com) → *Create a project*: type **Mod**, name
    **FlipScout**, URL `flipscout`, summary e.g. *"Flip notifier for Hypixel SkyBlock: underpriced BIN auctions and bazaar
    deals in chat, with a profit tracker. Never buys anything by itself."*
@@ -407,15 +474,15 @@ redistribute or modify them. To publish it:
 
    | Jar | Loader | Game versions | Dependency |
    |---|---|---|---|
-   | `flipscout-forge-1.8.9-1.4.0.jar` | Forge | 1.8.9 | none |
-   | `flipscout-fabric-1.21.8-1.4.0.jar` | Fabric | 1.21.7, 1.21.8 | Fabric API (required) |
-   | `flipscout-fabric-1.21.10-1.4.0.jar` | Fabric | 1.21.9, 1.21.10 | Fabric API (required) |
-   | `flipscout-fabric-1.21.11-1.4.0.jar` | Fabric | 1.21.11 | Fabric API (required) |
-   | `flipscout-fabric-26.1.2-1.4.0.jar` | Fabric | 26.1.x | Fabric API (required) |
-   | `flipscout-fabric-26.2-1.4.0.jar` | Fabric | 26.2.x | Fabric API (required) |
-   | `flipscout-fabric-26.3-1.4.0.jar` | Fabric | 26.3.x | Fabric API (required) |
+   | `flipscout-forge-1.8.9-1.5.0.jar` | Forge | 1.8.9 | none |
+   | `flipscout-fabric-1.21.8-1.5.0.jar` | Fabric | 1.21.7, 1.21.8 | Fabric API (required) |
+   | `flipscout-fabric-1.21.10-1.5.0.jar` | Fabric | 1.21.9, 1.21.10 | Fabric API (required) |
+   | `flipscout-fabric-1.21.11-1.5.0.jar` | Fabric | 1.21.11 | Fabric API (required) |
+   | `flipscout-fabric-26.1.2-1.5.0.jar` | Fabric | 26.1.x | Fabric API (required) |
+   | `flipscout-fabric-26.2-1.5.0.jar` | Fabric | 26.2.x | Fabric API (required) |
+   | `flipscout-fabric-26.3-1.5.0.jar` | Fabric | 26.3.x | Fabric API (required) |
 
-   Give each a version number like `1.4.0+fabric-1.21.8` or `1.4.0+forge-1.8.9`, channel **Release**, and paste the
+   Give each a version number like `1.5.0+fabric-1.21.8` or `1.5.0+forge-1.8.9`, channel **Release**, and paste the
    version's section of `CHANGELOG.md` into the changelog.
 5. **Submit for review.** Modrinth's moderators check new projects before they go public, which can take a few days.
 

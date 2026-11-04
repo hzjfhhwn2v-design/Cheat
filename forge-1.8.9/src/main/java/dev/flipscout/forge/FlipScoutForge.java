@@ -63,6 +63,7 @@ public class FlipScoutForge {
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         ClientCommandHandler.instance.registerCommand(new FlipScoutCommand(flipScout));
+        ClientCommandHandler.instance.registerCommand(new SkinInvestmentCommand(flipScout));
         openKey = new KeyBinding("Open the latest notification", Keyboard.KEY_NONE, "FlipScout");
         ClientRegistry.registerKeyBinding(openKey);
         settingsKey = new KeyBinding("Open the settings", Keyboard.KEY_NONE, "FlipScout");

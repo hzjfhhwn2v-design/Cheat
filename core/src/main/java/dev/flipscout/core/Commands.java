@@ -16,6 +16,9 @@ import dev.flipscout.core.item.ItemKey;
 import dev.flipscout.core.market.AuctionIndex;
 import dev.flipscout.core.market.Valuation;
 import dev.flipscout.core.profit.ProfitTracker;
+import dev.flipscout.core.skins.SkinAdvisor;
+import dev.flipscout.core.skins.SkinHistory;
+import dev.flipscout.core.skins.SkinText;
 import dev.flipscout.core.util.Coins;
 import dev.flipscout.core.util.Text;
 
@@ -43,9 +46,9 @@ import java.util.function.LongSupplier;
 final class Commands {
     private static final List<String> SUBCOMMANDS = Arrays.asList(
         "help", "gui", "on", "off", "ah", "bz", "top", "recent", "open", "profits", "session", "total", "flips",
-        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "history", "player", "discord",
-        "coop", "replay", "export", "blocked", "search", "museum", "set", "config",
-        "blacklist", "status", "credits", "reload", "test");
+        "stock", "kat", "craft", "forge", "fusion", "npc", "books", "lowsupply", "mayor", "history", "player", "skins",
+        "skin", "discord", "coop", "replay", "export", "blocked", "search", "museum", "set", "config",
+        "blacklist", "status", "debug", "credits", "reload", "test");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -195,6 +198,15 @@ final class Commands {
                 case "player":
                     player(args);
                     break;
+                case "skins":
+                    skins(args);
+                    break;
+                case "skin":
+                    skin(args, 1);
+                    break;
+                case "debug":
+                    debug(args, 1);
+                    break;
                 case "credits":
                     credits();
                     break;
@@ -240,6 +252,8 @@ final class Commands {
         helpLine("mayor", "mayor", "mayor, election favourite and what usually moves under them");
         helpLine("history <item> [day|week|month|all]", "history ", "price history of an item, as a chart");
         helpLine("player <name>", "player ", "a player's auctions: up for sale now and the last ones");
+        helpLine("skins [n]", "skins", "skins worth buying now to sell in a few weeks (also /skininvestment)");
+        helpLine("skin <name>", "skin ", "everything about one skin, with a chart of its last month");
         helpLine("recent [page]", "recent", "latest notifications (the last 100)");
         helpLine("replay", "replay", "notified auctions that are still up for sale");
         helpLine("blocked", "blocked", "auctions your filters turned down, and why");
@@ -258,6 +272,7 @@ final class Commands {
         helpLine("config [filter]", "config", "shows the settings");
         helpLine("blacklist add|remove|list [ID|player:NAME]", "blacklist ", "items or sellers to ignore");
         helpLine("status", "status", "data source status");
+        helpLine("debug [on|off]", "debug ", "shows the mod's warnings and errors in chat, to report them");
         helpLine("credits", "credits", "who made the mod and where the data comes from");
         helpLine("reload", "reload", "reloads the settings file");
         helpLine("test", "test", "shows a test notification");
@@ -778,6 +793,12 @@ final class Commands {
         line("SkyCofl lists", !config.sourceCoflnet ? "§8disabled"
             : engine.opportunities().listsLoaded() + " loaded, last answer " + Text.ago(now, engine.opportunities().lastSuccess())
                 + (engine.opportunities().lastError() != null ? " §8(" + engine.opportunities().lastError() + ")" : ""));
+        if (config.skinsEnabled) {
+            List<String> wanted = engine.skinCandidates();
+            line("Skin prices", !config.sourceCoflnet ? "§8SkyCofl disabled" : engine.skinHistory().fresh(wanted) + "/"
+                + wanted.size() + " skins read today, last " + Text.ago(now, engine.skinHistory().lastRead())
+                + (engine.skinHistory().updating() ? " §8(reading)" : ""));
+        }
         line("Notifications this session", s.auctionNotifications + " auctions, " + s.bazaarNotifications + " bazaar, "
             + s.otherNotifications + " other");
         int alerts = s.alertDelayCount.get();
@@ -1081,6 +1102,155 @@ final class Commands {
         }
     }
 
+    // ---- Skin investments ----
+
+    private void skins(String[] args) {
+        if (args.length >= 2) {
+            String sub = args[1].toLowerCase(Locale.ROOT);
+            if ("detail".equals(sub) || "info".equals(sub)) {
+                skin(args, 2);
+                return;
+            }
+            if ("debug".equals(sub)) {
+                debug(args, 2);
+                return;
+            }
+        }
+        final int limit = limit(args, 1, 10);
+        if (!skinsOn()) {
+            return;
+        }
+        if (!engine.initialScanDone()) {
+            info("§7Still reading the auction house: try again in a minute.");
+            return;
+        }
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                List<String> wanted = engine.skinCandidates();
+                SkinAdvisor.Ranking ranking = engine.skins().rank(limit);
+                for (Msg line : SkinText.ranking(ranking, engine.skins().horizon(), engine.skinFreshness(wanted))) {
+                    platform.showMessage(line);
+                }
+            }
+        });
+    }
+
+    private void skin(String[] args, int from) {
+        if (!skinsOn()) {
+            return;
+        }
+        if (args.length <= from) {
+            throw new IllegalArgumentException("Usage: /flipscout skin <name or ID>");
+        }
+        String query = join(args, from);
+        List<String> found = findSkins(query);
+        if (found.isEmpty()) {
+            throw new IllegalArgumentException("No skin called \"" + query + "\" seen on the auction house yet.");
+        }
+        if (found.size() > 1) {
+            info("§7Which one?");
+            for (int i = 0; i < Math.min(8, found.size()); i++) {
+                String id = found.get(i);
+                platform.showMessage(new Msg().run("§7  " + engine.skinHistory().name(id) + " §8(" + id + ")",
+                    "/flipscout skin " + id, "§eClick to see it"));
+            }
+            if (found.size() > 8) {
+                platform.showMessage(Msg.plain("§8  ... and " + (found.size() - 8) + " more: type more of the name"));
+            }
+            return;
+        }
+        final String id = found.get(0);
+        engine.runAsync(new Runnable() {
+            @Override
+            public void run() {
+                SkinHistory history = engine.skinHistory();
+                if (history.stale(id)) {
+                    try {
+                        history.fetch(id);
+                    } catch (IOException | RuntimeException e) {
+                        if (history.get(id) == null) {
+                            error("Could not read the price history from SkyCofl: " + e.getMessage());
+                            return;
+                        }
+                    }
+                }
+                SkinAdvisor.Pick pick = engine.skins().analyse(id);
+                for (Msg line : SkinText.detail(pick, engine.skins().horizon(), engine.serverTime())) {
+                    platform.showMessage(line);
+                }
+            }
+        });
+    }
+
+    /** Skins whose ID is {@code query}, whose name is it, or whose name has all its words. */
+    List<String> findSkins(String query) {
+        Map<String, String> names = engine.skinHistory().names();
+        String trimmed = query.trim();
+        String upper = trimmed.toUpperCase(Locale.ROOT).replace(' ', '_');
+        if (names.containsKey(upper)) {
+            return Collections.singletonList(upper);
+        }
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        String[] words = lower.split("\\s+");
+        List<String> exact = new ArrayList<String>();
+        TreeSet<String> partial = new TreeSet<String>();
+        for (Map.Entry<String, String> e : names.entrySet()) {
+            String name = e.getValue().toLowerCase(Locale.ROOT);
+            if (name.equals(lower) || name.equals(lower + " skin")) {
+                exact.add(e.getKey());
+                continue;
+            }
+            String id = e.getKey().toLowerCase(Locale.ROOT);
+            boolean all = true;
+            for (String word : words) {
+                if (!name.contains(word) && !id.contains(word)) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) {
+                partial.add(e.getKey());
+            }
+        }
+        return !exact.isEmpty() ? exact : new ArrayList<String>(partial);
+    }
+
+    private boolean skinsOn() {
+        if (!config.skinsEnabled) {
+            info("§7Skin investments are off: §e/flipscout set skins.enabled on");
+            return false;
+        }
+        return coflnetOn();
+    }
+
+    // ---- Debug ----
+
+    private void debug(String[] args, int from) {
+        if (args.length > from) {
+            boolean on = Config.parseBoolean(args[from]);
+            config.debugChat = on;
+            config.debug = on;
+            Log.debugEnabled = on;
+            config.save(configFile);
+        }
+        info("§7Warnings and errors in chat: " + onOff(config.debugChat) + " §8| §7detailed log: " + onOff(config.debug));
+        if (!config.debugChat) {
+            platform.showMessage(new Msg().suggest("§7  Turn it on with §e/flipscout debug on §7to see what goes wrong.",
+                "/flipscout debug on", "§eClick to type it"));
+            return;
+        }
+        Map<String, String> errors = engine.status.errors();
+        if (errors.isEmpty()) {
+            platform.showMessage(Msg.plain("§7  No errors right now: new ones will show up here."));
+        }
+        for (Map.Entry<String, String> e : errors.entrySet()) {
+            platform.showMessage(Msg.plain("§8[FlipScout debug] §c" + e.getKey() + ": " + e.getValue()));
+        }
+        platform.showMessage(Msg.plain("§7  Everything is also written to §flogs/latest.log§7. Turn it off with "
+            + "§e/flipscout debug off§7."));
+    }
+
     private boolean coflnetOn() {
         if (!config.sourceCoflnet) {
             info("§7These lists come from SkyCofl, which is turned off: §e/flipscout set source.coflnet on");
@@ -1109,10 +1279,10 @@ final class Commands {
         info("§fCredits");
         platform.showMessage(Msg.plain("§7  Made by §fyrqs §7and §fbaldih"));
         platform.showMessage(new Msg().add("§7  Kat, Craft, Forge, Fusion, NPC and Book flips, low supply items, price and"
-                + " bazaar history, past mayors, player auctions, item prices and names: ")
+                + " bazaar history, skin prices, past mayors, player auctions, item prices and names: ")
             .link("§bAPI by SkyCofl (sky.coflnet.com)", OpportunityText.DATA_URL,
                 "§7SkyCofl's free API for developers\n§eClick to open sky.coflnet.com"));
-        platform.showMessage(new Msg().add("§7  Auctions, sold auctions, bazaar, items and elections: ")
+        platform.showMessage(new Msg().add("§7  Auctions, sold auctions, bazaar, items, elections and fire sales: ")
             .link("§bHypixel public API", "https://api.hypixel.net", "§7Hypixel's public SkyBlock API"));
         platform.showMessage(Msg.plain("§7  Player names: §fMojang API"));
     }
@@ -1153,6 +1323,12 @@ final class Commands {
                     return startingWith(Arrays.asList("add", "remove", "list"), last);
                 case "history":
                     return itemIds(last);
+                case "skins":
+                    return startingWith(Arrays.asList("detail", "debug", "5", "10", "20"), last);
+                case "skin":
+                    return skinIds(last);
+                case "debug":
+                    return startingWith(ON_OFF, last);
                 case "session":
                     return startingWith(Arrays.asList("pause", "resume", "reset", "history"), last);
                 case "total":
@@ -1168,6 +1344,12 @@ final class Commands {
                 return startingWith(Collections.singletonList("confirm"), last);
             }
             if ("bz".equals(sub)) {
+                return startingWith(ON_OFF, last);
+            }
+            if ("skins".equals(sub) && "detail".equalsIgnoreCase(args[1])) {
+                return skinIds(last);
+            }
+            if ("skins".equals(sub) && "debug".equalsIgnoreCase(args[1])) {
                 return startingWith(ON_OFF, last);
             }
             if ("top".equals(sub)) {
@@ -1198,6 +1380,43 @@ final class Commands {
             }
         }
         return Collections.emptyList();
+    }
+
+    /** Skin IDs matching what is typed (by ID or by a word of the name): the last advised ones first. */
+    private List<String> skinIds(String prefix) {
+        String upper = prefix.toUpperCase(Locale.ROOT);
+        String lower = prefix.toLowerCase(Locale.ROOT);
+        Map<String, String> names = engine.skinHistory().names();
+        Set<String> out = new LinkedHashSet<String>();
+        for (String id : engine.skins().lastRanking()) {
+            if (matchesSkin(id, names.get(id), upper, lower)) {
+                out.add(id);
+            }
+        }
+        TreeSet<String> rest = new TreeSet<String>();
+        for (Map.Entry<String, String> e : names.entrySet()) {
+            if (matchesSkin(e.getKey(), e.getValue(), upper, lower)) {
+                rest.add(e.getKey());
+            }
+        }
+        out.addAll(rest);
+        List<String> list = new ArrayList<String>(out);
+        return list.size() > 50 ? list.subList(0, 50) : list;
+    }
+
+    private static boolean matchesSkin(String id, String name, String upper, String lower) {
+        if (upper.isEmpty() || id.startsWith(upper)) {
+            return true;
+        }
+        if (name == null) {
+            return false;
+        }
+        for (String word : name.toLowerCase(Locale.ROOT).split(" ")) {
+            if (word.startsWith(lower)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<String> itemIds(String prefix) {

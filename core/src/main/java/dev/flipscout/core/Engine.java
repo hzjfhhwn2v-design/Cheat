@@ -32,6 +32,10 @@ import dev.flipscout.core.market.CoflnetSource;
 import dev.flipscout.core.market.PriceService;
 import dev.flipscout.core.market.SalesHistory;
 import dev.flipscout.core.market.Valuation;
+import dev.flipscout.core.skins.FireSales;
+import dev.flipscout.core.skins.SkinAdvisor;
+import dev.flipscout.core.skins.SkinHistory;
+import dev.flipscout.core.skins.SkinText;
 import dev.flipscout.core.flip.Fees;
 import dev.flipscout.core.item.Upgrades;
 import dev.flipscout.core.util.Coins;
@@ -238,6 +242,9 @@ public final class Engine {
     final Mayors mayors;
     final Players players;
     final History history;
+    final SkinHistory skinHistory;
+    final FireSales fireSales;
+    final SkinAdvisor skins;
     private final Notifier notifier = new Notifier();
     /** "PLAYER:NAME" blacklist entries and the UUID each resolved to. */
     private final Map<String, String> sellerUuids = new ConcurrentHashMap<String, String>();
@@ -275,7 +282,7 @@ public final class Engine {
     private long nextExpire;
     private long nextSave;
     private long nextPrefetch;
-    private long lastAuctionsUpdate;
+    private volatile long lastAuctionsUpdate;
     private int auctionStale;
     private final Backoff auctionBackoff = new Backoff();
 
@@ -289,6 +296,9 @@ public final class Engine {
     private final AtomicBoolean otherJob = new AtomicBoolean();
     private final AtomicBoolean mayorJob = new AtomicBoolean();
     private final AtomicBoolean sellerJob = new AtomicBoolean();
+    private final AtomicBoolean skinJob = new AtomicBoolean();
+    private final AtomicBoolean fireSaleJob = new AtomicBoolean();
+    private volatile long nextSkinCheck;
     private volatile long nextSellerCheck;
     private volatile long nextMayorCheck;
     private final AtomicBoolean coopJob = new AtomicBoolean();
@@ -326,6 +336,28 @@ public final class Engine {
             Mayors.SLEEP);
         this.players = new Players(http, () -> config.urlCoflnet);
         this.history = new History(http, () -> config.urlCoflnet, clock);
+        this.skinHistory = new SkinHistory(http, () -> config.urlCoflnet, clock, new File(dataDir, "skins.json.gz"),
+            Mayors.SLEEP);
+        this.fireSales = new FireSales(http, () -> config.urlHypixel, clock, new File(dataDir, "firesales.json"));
+        this.skins = new SkinAdvisor(config, skinHistory, fireSales, new SkinLive(), clock);
+    }
+
+    /** The live auction data skin investments are judged with. */
+    private final class SkinLive implements SkinAdvisor.Live {
+        @Override
+        public AuctionIndex.Listing lowest(String id) {
+            return index.lowest(id, null);
+        }
+
+        @Override
+        public int listings(String id) {
+            return index.count(id, null);
+        }
+
+        @Override
+        public Valuation valuate(AuctionIndex.Listing lowest) {
+            return prices.valuate(lowest.key, lowest.uuid, lowest.unitPrice, false);
+        }
     }
 
     /** Plain auction items with the most coins traded, for the mayor analysis. */
@@ -544,10 +576,24 @@ public final class Engine {
                 background(sellerJob, this::resolveSellers);
             }
         }
-        if (now >= nextMayorCheck && !mayorJob.get()) {
+        // One SkyCofl reader at a time: the mayor analysis waits for the skin prices and the other way round.
+        if (now >= nextMayorCheck && !mayorJob.get() && !skinJob.get()) {
             nextMayorCheck = now + 10_000L;
             if (mayors.due(now)) {
                 background(mayorJob, this::updateMayors);
+            }
+        }
+        if (config.skinsEnabled && now >= nextSkinCheck) {
+            nextSkinCheck = now + 10_000L;
+            if (fireSales.due(now)) {
+                background(fireSaleJob, this::refreshFireSales);
+            }
+            // Not while the mayor analysis reads SkyCofl too: one of them at a time.
+            if (config.sourceCoflnet && initialScanDone && !skinJob.get() && !mayorJob.get()) {
+                final List<String> wanted = skinCandidates();
+                if (skinHistory.due(wanted)) {
+                    background(skinJob, () -> updateSkins(wanted));
+                }
             }
         }
         if (now >= nextSave) {
@@ -726,7 +772,8 @@ public final class Engine {
         }
         ItemKey existing = canonicalKeys.putIfAbsent(decoded.key.key, decoded.key);
         if (existing != null && existing != decoded.key && existing.equals(decoded.key)) {
-            return new ItemKeys.Decoded(existing, decoded.count, decoded.name, decoded.upgrades, decoded.petCandy);
+            return new ItemKeys.Decoded(existing, decoded.count, decoded.name, decoded.upgrades, decoded.petCandy,
+                decoded.skin);
         }
         return decoded;
     }
@@ -744,6 +791,9 @@ public final class Engine {
                 decoded.name, auction.tier == null ? null : auction.tier.intern(), decoded.key, auction.startingBid,
                 decoded.count, auction.start, auction.end, now, scan, decoded.upgrades, decoded.petCandy);
             index.add(listing);
+            if (decoded.skin) {
+                skinHistory.learn(decoded.key.id, decoded.name);
+            }
             if (initialScanDone && now - clockSkew - auction.start < FRESH_MS) {
                 consider(listing);
             }
@@ -1412,6 +1462,96 @@ public final class Engine {
 
     public History history() {
         return history;
+    }
+
+    // ---- Skin investments (background) ----
+
+    /** Skins with enough BIN auctions up to be judged, most listed first. */
+    public List<String> skinCandidates() {
+        final Map<String, Integer> counts = new HashMap<String, Integer>();
+        for (String id : skinHistory.names().keySet()) {
+            int n = index.count(id, null);
+            if (n >= config.skinsMinListings) {
+                counts.put(id, n);
+            }
+        }
+        List<String> out = new ArrayList<String>(counts.keySet());
+        Collections.sort(out, new Comparator<String>() {
+            @Override
+            public int compare(String a, String b) {
+                int byCount = Integer.compare(counts.get(b), counts.get(a));
+                return byCount != 0 ? byCount : a.compareTo(b);
+            }
+        });
+        return out;
+    }
+
+    private void updateSkins(List<String> wanted) {
+        try {
+            int read = skinHistory.update(wanted);
+            status.ok("skins");
+            if (read > 0) {
+                Log.debug("Skin histories read: " + read + ", " + skinHistory.fresh(wanted) + "/" + wanted.size() + " fresh");
+            }
+        } catch (IOException e) {
+            status.error("skins", e);
+            Log.warn("Could not read skin prices from SkyCofl: " + e.getMessage());
+        } catch (RuntimeException e) {
+            status.error("skins", e);
+            Log.warn("Could not read skin prices from SkyCofl", e);
+        }
+    }
+
+    private void refreshFireSales() {
+        List<FireSales.Sale> fresh;
+        try {
+            fresh = fireSales.refresh();
+            status.ok("firesales");
+        } catch (IOException | RuntimeException e) {
+            status.error("firesales", e);
+            return;
+        }
+        if (!config.skinsFireSaleAlert) {
+            return;
+        }
+        long now = serverTime();
+        for (FireSales.Sale sale : fresh) {
+            if (sale.current(now)) {
+                deliver(SkinText.fireSaleAlert(sale, fireSaleName(sale), now), clock.getAsLong(), null);
+            }
+        }
+    }
+
+    /** Display name of what a fire sale sells. */
+    public String fireSaleName(FireSales.Sale sale) {
+        if (sale.rune != null) {
+            return Text.titleCase(sale.rune) + " Rune";
+        }
+        String name = skinHistory.name(sale.itemId);
+        if (name != null) {
+            return name;
+        }
+        // A new skin is often on sale before anyone sells one: its ID is all there is.
+        return sale.itemId.startsWith("PET_SKIN_") ? Text.titleCase(sale.itemId.substring(9)) + " Skin"
+            : items.displayName(sale.itemId);
+    }
+
+    public SkinAdvisor skins() {
+        return skins;
+    }
+
+    public SkinHistory skinHistory() {
+        return skinHistory;
+    }
+
+    public FireSales fireSales() {
+        return fireSales;
+    }
+
+    /** How fresh the data behind /flipscout skins is. */
+    public SkinText.Freshness skinFreshness(List<String> wanted) {
+        long age = lastAuctionsUpdate > 0 ? serverTime() - lastAuctionsUpdate : -1;
+        return new SkinText.Freshness(age, wanted.size(), skinHistory.fresh(wanted), skinHistory.updating());
     }
 
     // ---- Blocked sellers ----

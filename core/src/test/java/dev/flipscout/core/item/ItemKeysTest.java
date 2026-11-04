@@ -216,4 +216,30 @@ class ItemKeysTest {
         assertNull(ItemKeys.decodeQuiet(TestData.itemBytes(map("color", "red"), null, 1), "no id"));
         assertNull(ItemKeys.decodeQuiet(null, "x"));
     }
+
+    private static ItemKeys.Decoded withLore(String id, String name, String... lore) throws IOException {
+        Map<String, Object> display = map("Name", name, "Lore", new ArrayList<Object>(Arrays.asList((Object[]) lore)));
+        Map<String, Object> item = map("id", (short) 1, "Count", (byte) 1, "Damage", (short) 0,
+            "tag", map("ExtraAttributes", map("id", id), "display", display));
+        List<Object> items = new ArrayList<Object>();
+        items.add(item);
+        return ItemKeys.decode(TestData.encode(map("i", items)), dev.flipscout.core.util.Text.stripCodes(name));
+    }
+
+    @Test
+    void skinsAreRecognisedByTheirRarityLineAndName() throws IOException {
+        // Real cases from the auction house: skin IDs follow no rule.
+        assertTrue(withLore("CROWN_OF_AVARICE_ROYAL", "§6Grand Royal Skin", "§7This skin can only be applied to Crown of Avarice.",
+            "", "§6§lLEGENDARY COSMETIC").skin);
+        assertTrue(withLore("GRINCH_PERSONALITY", "§9Grinch Minion Skin", "§9§lRARE COSMETIC").skin);
+        // Summer minion skins have a plain rarity line.
+        assertTrue(withLore("ICE_LOLLY_PERSONALITY", "§fIce Lolly Minion Skin", "§f§lCOMMON").skin);
+        assertTrue(withLore("PET_SKIN_BLACK_CAT_CATGIRL", "§5Catgirl Black Cat Skin").skin);
+        // Materials called "... Skin", and cosmetics that are not skins.
+        assertFalse(withLore("ALLIGATOR_SKIN", "§9Alligator Skin", "§9§lRARE").skin);
+        assertFalse(withLore("WEREWOLF_SKIN", "§9Werewolf Skin", "§7Dropped by werewolves", "§9§lRARE").skin);
+        assertFalse(withLore("UNIQUE_RUNE", "§d◆ Ornamental Rune III", "§d§lEPIC COSMETIC").skin);
+        assertFalse(withLore("DITTO_BLOB", "§5Ditto Blob", "§5§lEPIC COSMETIC").skin);
+        assertFalse(ItemKeys.decode(TestData.plainItem("HYPERION"), "Hyperion").skin);
+    }
 }

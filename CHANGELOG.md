@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0
+
+Skin investments:
+
+- `/flipscout skins` (also `/skininvestment`): the skins worth buying now to sell in 30 days, after fees, best return
+  for its risk first. Hover a skin for the price, expected profit and return, risk, 7- and 30-day change, volatility,
+  listings, sales, fire sale and confidence; click it to open its cheapest BIN. A line says how fresh the data is.
+- `/flipscout skin <name>` (also `/skininvestment detail <name>`): one skin in full, with a chart of its last 30 days
+  and a link to its full chart. Tab completes skin IDs, also from a word of the name.
+- Every skin on the auction house counts, recognised by its rarity line: pet, helmet, minion, barn, backpack, power orb.
+- Daily prices from SkyCofl, read in the background (about 20 a minute at first, then each skin once a day) and kept in
+  `skins.json.gz`; coins moved between accounts by "selling" a skin for hundreds of times its price are filtered out.
+- The expected price does not follow trends (they do not continue for skins): it is what the skin sells for now, moved by
+  what skins of the same age usually did. The confidence is how often a purchase at this price would have been in profit.
+- Skins that are hard to sell, too new, falling hard, blacklisted or on a fire sale are left out (`skins.*` settings).
+
+Fire sales: a chat alert when Hypixel announces one (`skins.fireSaleAlert`), kept in `firesales.json`.
+
+Debug: `/flipscout debug on|off` shows the mod's warnings and errors in chat, so you can report them (`debug.chat`).
+
 ## 1.4.0
 
 New kinds of flip, from SkyCofl's free API and priced again with live data:

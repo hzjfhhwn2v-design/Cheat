@@ -11,7 +11,7 @@ import java.util.function.LongSupplier;
 
 /** Entry point used by the Forge and Fabric mods. */
 public final class FlipScout {
-    public static final String VERSION = "1.4.0";
+    public static final String VERSION = "1.5.0";
     public static final String MOD_ID = "flipscout";
 
     private final Config config = new Config();
@@ -34,6 +34,7 @@ public final class FlipScout {
         File configFile = new File(dataDir, "flipscout.properties");
         config.load(configFile);
         Log.debugEnabled = config.debug;
+        Log.setEcho(new ChatLog(platform, () -> config.debugChat, clock));
         this.platform = platform;
         engine = new Engine(config, platform, http, dataDir, clock);
         tracker = new ProfitTracker(config, profitsFile(dataDir), clock, platform, engine::runAsync);
@@ -89,6 +90,22 @@ public final class FlipScout {
     /** Tab completion for /flipscout; the last argument is the one being typed (may be empty). */
     public List<String> complete(String[] args) {
         return commands.complete(args);
+    }
+
+    /** /skininvestment: the same as /flipscout skins. */
+    public void skinCommand(String[] args) {
+        commands.execute(withSkins(args));
+    }
+
+    public List<String> completeSkinCommand(String[] args) {
+        return commands.complete(withSkins(args));
+    }
+
+    private static String[] withSkins(String[] args) {
+        String[] out = new String[args.length + 1];
+        out[0] = "skins";
+        System.arraycopy(args, 0, out, 1, args.length);
+        return out;
     }
 
     /**
